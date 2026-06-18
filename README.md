@@ -86,22 +86,10 @@ docker-compose up -d
 
 ### 2. Setup Virtual Environment & Install Dependencies
 
-Gunakan **virtual environment (venv)** agar dependencies terisolasi dari global Python — ini memastikan versi library yang terinstall konsisten di semua mesin (reliable), dan jika tidak dipakai lagi tinggal hapus folder `venv/` tanpa meninggalkan residu (maintainable).
-
 ```bash
-# Buat virtual environment
 python -m venv venv
-
-# Aktifkan (Windows PowerShell)
 venv\Scripts\Activate.ps1
-# Atau (Windows CMD)
-venv\Scripts\activate
-
-# Install dependencies dari requirements.txt
 pip install -r requirements.txt
-
-# Keluar dari venv setelah selesai bekerja
-deactivate
 ```
 
 ### 3. Jalankan FastAPI (Terminal 1)
@@ -120,6 +108,7 @@ python simulasi_device.py
 
 ## Catatan Pengembangan
 
+- **Virtual Environment (venv)** — `backend/` menggunakan dua library MQTT berbeda (`aiomqtt` di worker dan `paho-mqtt` di simulator) yang keduanya harus kompatibel satu sama lain. Venv mengisolasi dependencies ini agar versinya terkunci dan tidak terpengaruh library Python lain di sistem — sehingga hasil `pip install` di mesin manapun akan identik.
 - **`main.py`** memiliki placeholder di `mqtt_worker()` untuk implementasi selanjutnya: parsing data, simpan ke TimescaleDB, update Redis cache, dan trigger Redis PUBLISH untuk notifikasi real-time.
 - **`simulasi_device.py`** adalah simulator paling sederhana — hanya mengirim 3 parameter data. Ini bisa dikembangkan untuk mensimulasikan data lingkungan yang lebih kompleks (PM2.5, CO, dll) dan AI Vision.
 
