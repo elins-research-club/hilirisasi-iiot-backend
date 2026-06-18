@@ -4,7 +4,6 @@
 
 Backend ini adalah **prototype awal** dari sistem **Industrial Internet of Things (IIoT)** untuk monitoring lingkungan secara real-time. Sistem ini dirancang untuk menerima data sensor dari perangkat IoT melalui protokol MQTT, dengan infrastruktur Redis (cache) dan TimescaleDB (time-series database) yang sudah siap.
 
-> 📘 **Referensi arsitektur sistem lengkap dapat dilihat pada** [`Dokumentasi/Diagram IIoT Kit.png`](../Dokumentasi/Diagram%20IIoT%20Kit.png)
 
 ---
 
@@ -45,7 +44,7 @@ Proyek ini masih dalam tahap awal pengembangan (proof-of-concept):
 | Simpan data ke TimescaleDB | ❌ Belum |
 | REST API endpoints | ❌ Belum (hanya 1 health check) |
 | WebSocket real-time | ❌ Belum |
-| Autentikasi & RBAC | ❌ Belum |
+
 
 ---
 
