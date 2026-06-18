@@ -84,10 +84,24 @@ Proyek ini masih dalam tahap awal pengembangan (proof-of-concept):
 docker-compose up -d
 ```
 
-### 2. Install Dependencies
+### 2. Setup Virtual Environment & Install Dependencies
+
+Gunakan **virtual environment (venv)** agar dependencies terisolasi dari global Python — ini memastikan versi library yang terinstall konsisten di semua mesin (reliable), dan jika tidak dipakai lagi tinggal hapus folder `venv/` tanpa meninggalkan residu (maintainable).
 
 ```bash
-pip install fastapi uvicorn aiomqtt redis paho-mqtt
+# Buat virtual environment
+python -m venv venv
+
+# Aktifkan (Windows PowerShell)
+venv\Scripts\Activate.ps1
+# Atau (Windows CMD)
+venv\Scripts\activate
+
+# Install dependencies dari requirements.txt
+pip install -r requirements.txt
+
+# Keluar dari venv setelah selesai bekerja
+deactivate
 ```
 
 ### 3. Jalankan FastAPI (Terminal 1)
