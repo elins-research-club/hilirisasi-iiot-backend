@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  emqx:
+    image: emqx/emqx:latest
+    container_name: emqx_broker
+    ports:
+      - "1883:1883"
+      - "18083:18083"
+    restart: always
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis_server
+    ports:
+      - "6379:6379"
+    restart: always
+
+  timescaledb:
+    image: timescale/timescaledb:latest-pg14
+    container_name: timescale_db
+    environment:
+      - POSTGRES_USER=myuser
+      - POSTGRES_PASSWORD=mypassword
+      - POSTGRES_DB=iot_data
+    ports:
+      - "5432:5432"
+    restart: always
