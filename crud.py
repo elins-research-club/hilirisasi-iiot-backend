@@ -448,90 +448,196 @@ def seed_warehouse_data(db: Session):
 # ── Historical Analytics ─────────────────────────────────────────
 from sqlalchemy import func
 
+import urllib.request
+import urllib.parse
+import json
+import time
+
 def get_historical_telemetry(db: Session, node_ids: list[str], metric: str, time_range: str):
-    now = datetime.datetime.utcnow()
+    if not node_ids:
+        return {"chartData": [], "kpiData": {}}
+        
+    now = time.time()
     
-    if time_range == '24h':
-        start_time = now - datetime.timedelta(hours=24)
-        trunc_level = 'hour'
+    if time_range == '1h':
+        start_time = now - 3600
+        step = '1m'
+    elif time_range == '24h':
+        start_time = now - 86400
+        step = '1h'
     elif time_range == '7d':
-        start_time = now - datetime.timedelta(days=7)
-        trunc_level = 'day'
+        start_time = now - (7 * 86400)
+        step = '1d'
     elif time_range == '30d':
-        start_time = now - datetime.timedelta(days=30)
-        trunc_level = 'day'
+        start_time = now - (30 * 86400)
+        step = '1d'
     else:
-        start_time = now - datetime.timedelta(hours=24)
-        trunc_level = 'hour'
+        start_time = now - 86400
+        step = '1h'
         
-    # Default to temperature if metric not found
-    metric_col = getattr(models.SensorData, metric, models.SensorData.temperature)
+    # Mapping nama metrik (misal: temperature -> sinergi_temperature)
+    prom_metric = f"sinergi_{metric}"
+    node_regex = "|".join(node_ids)
+    base_query = f'{prom_metric}{{node_id=~"{node_regex}"}}'
     
+    import os
+    prom_url = os.getenv("PROMETHEUS_URL", "http://prometheus:9090")
+    
+    # 1. Chart Data Query (menggunakan query_range)
+    chart_url = f"{prom_url}/api/v1/query_range"
+    chart_data_payload = urllib.parse.urlencode({
+        'query': base_query,
+        'start': start_time,
+        'end': now,
+        'step': step
+    }).encode('utf-8')
+    
+    kpi_url = f"{prom_url}/api/v1/query"
+    
+    def fetch_prom(url, payload):
+        req = urllib.request.Request(url, data=payload)
+        with urllib.request.urlopen(req) as response:
+            return json.loads(response.read().decode('utf-8'))['data']['result']
+            
     try:
-        # PostgreSQL specific aggregation
-        results = (
-            db.query(
-                models.SensorData.node_id,
-                func.date_trunc(trunc_level, models.SensorData.timestamp).label('time_bucket'),
-                func.avg(metric_col).label('avg_val'),
-                func.min(metric_col).label('min_val'),
-                func.max(metric_col).label('max_val')
-            )
-            .filter(models.SensorData.node_id.in_(node_ids))
-            .filter(models.SensorData.timestamp >= start_time)
-            .group_by(models.SensorData.node_id, 'time_bucket')
-            .order_by('time_bucket')
-            .all()
-        )
-        
-        # We also need global stats (avg, min, max) over the entire period per node
-        kpi_results = (
-            db.query(
-                models.SensorData.node_id,
-                func.avg(metric_col).label('avg_val'),
-                func.min(metric_col).label('min_val'),
-                func.max(metric_col).label('max_val')
-            )
-            .filter(models.SensorData.node_id.in_(node_ids))
-            .filter(models.SensorData.timestamp >= start_time)
-            .group_by(models.SensorData.node_id)
-            .all()
-        )
-        
-        # Format the data for the frontend
-        # Frontend Recharts expects: [{ time: "...", "NodeA": 25.5, "NodeB": 24.1 }, ...]
+        # Menarik data grafik (Time-Series)
+        chart_result = fetch_prom(chart_url, chart_data_payload)
         
         time_series_map = {}
-        for row in results:
-            node_id = row.node_id
-            t_bucket = row.time_bucket.isoformat() if isinstance(row.time_bucket, datetime.datetime) else str(row.time_bucket)
-            avg_val = round(row.avg_val, 2) if row.avg_val else 0
+        for series in chart_result:
+            nid = series['metric'].get('node_id')
+            if not nid: continue
             
-            if t_bucket not in time_series_map:
-                time_series_map[t_bucket] = {"timestamp": t_bucket}
-            
-            time_series_map[t_bucket][node_id] = avg_val
-            
-        chart_data = list(time_series_map.values())
-        chart_data.sort(key=lambda x: x["timestamp"])
+            for val in series['values']:
+                t_sec = val[0]
+                v = float(val[1])
+                t_iso = datetime.datetime.utcfromtimestamp(t_sec).isoformat()
+                
+                if t_iso not in time_series_map:
+                    time_series_map[t_iso] = {"timestamp": t_iso}
+                time_series_map[t_iso][nid] = round(v, 2)
+                
+        chartData = list(time_series_map.values())
+        chartData.sort(key=lambda x: x["timestamp"])
         
-        kpi_data = {}
-        for row in kpi_results:
-            kpi_data[row.node_id] = {
-                "avg": round(row.avg_val, 2) if row.avg_val else 0,
-                "min": round(row.min_val, 2) if row.min_val else 0,
-                "max": round(row.max_val, 2) if row.max_val else 0,
-            }
-            
+        # Menyiapkan KPI Data awal
+        kpiData = {nid: {"avg": 0, "min": 0, "max": 0} for nid in node_ids}
+        
+        # Fungsi pembantu untuk menarik agregasi KPI
+        def run_kpi(func_name, key):
+            query = f'{func_name}({prom_metric}{{node_id=~"{node_regex}"}}[{time_range}])'
+            payload = urllib.parse.urlencode({'query': query}).encode('utf-8')
+            res = fetch_prom(kpi_url, payload)
+            for r in res:
+                nid = r['metric'].get('node_id')
+                if nid and nid in kpiData:
+                    kpiData[nid][key] = round(float(r['value'][1]), 2)
+                    
+        # Eksekusi kueri KPI (Avg, Min, Max)
+        run_kpi('avg_over_time', 'avg')
+        run_kpi('min_over_time', 'min')
+        run_kpi('max_over_time', 'max')
+        
         return {
-            "chartData": chart_data,
-            "kpiData": kpi_data
+            "chartData": chartData,
+            "kpiData": kpiData
         }
     except Exception as e:
-        # Fallback for SQLite or error handling
-        print(f"Error in historical query: {e}")
+        print(f"Error querying Prometheus: {e}")
         return {
             "chartData": [],
             "kpiData": {},
             "error": str(e)
         }
+
+def get_prometheus_latest_state(node_ids: list[str]):
+    """Query Prometheus for the latest values of all sinergi_* metrics for the given nodes."""
+    if not node_ids:
+        return {}
+        
+    import os
+    import urllib.request
+    import urllib.parse
+    import json
+    
+    prom_url = os.getenv("PROMETHEUS_URL", "http://prometheus:9090")
+    query_url = f"{prom_url}/api/v1/query"
+    
+    # Query all metrics starting with sinergi_ for the specific nodes
+    node_regex = "|".join(node_ids)
+    query = f'{{__name__=~"sinergi_.*", node_id=~"{node_regex}"}}'
+    
+    payload = urllib.parse.urlencode({'query': query}).encode('utf-8')
+    
+    latest_state = {nid: {} for nid in node_ids}
+    
+    try:
+        req = urllib.request.Request(query_url, data=payload)
+        with urllib.request.urlopen(req, timeout=5) as response:
+            result = json.loads(response.read().decode('utf-8'))['data']['result']
+            
+            for res in result:
+                metric_labels = res['metric']
+                metric_name = metric_labels.get('__name__', '')
+                node_id = metric_labels.get('node_id')
+                
+                if not node_id or node_id not in latest_state:
+                    continue
+                    
+                # hapus prefix 'sinergi_'
+                key = metric_name.replace('sinergi_', '')
+                value = float(res['value'][1])
+                timestamp = float(res['value'][0])
+                
+                latest_state[node_id][key] = value
+                
+                # Update timestamp for node
+                if 'timestamp' not in latest_state[node_id] or timestamp > latest_state[node_id]['timestamp']:
+                    latest_state[node_id]['timestamp'] = timestamp
+                    
+        return latest_state
+    except Exception as e:
+        print(f"Error querying latest state from Prometheus: {e}")
+        return {}
+
+
+# ── Activity Logs ───────────────────────────────────────────────
+import uuid
+
+def create_activity_log(db: Session, action: str, detail: str, user_id: str, username: str, company_id: str):
+    log_id = "log_" + str(uuid.uuid4()).replace("-", "")[:8]
+    log_entry = models.ActivityLog(
+        id=log_id,
+        user_id=user_id,
+        username=username,
+        company_id=company_id,
+        action=action,
+        detail=detail,
+        timestamp=datetime.datetime.utcnow()
+    )
+    db.add(log_entry)
+    db.commit()
+    db.refresh(log_entry)
+    return log_entry
+
+def get_activity_logs(db: Session, company_id: str, limit: int = 100):
+    query = db.query(models.ActivityLog)
+    if company_id:
+        query = query.filter(models.ActivityLog.company_id == company_id)
+    return query.order_by(models.ActivityLog.timestamp.desc()).limit(limit).all()
+
+def can_view_all_activity_logs(features: list, company_id: str | None) -> bool:
+    return (
+        company_id == "comp_fmipa_ugm"
+        or "view_all_logs" in features
+        or "view_all_activity_logs" in features
+        or "view_all_nodes" in features
+    )
+
+def clear_activity_logs(db: Session, company_id: str):
+    query = db.query(models.ActivityLog)
+    if company_id:
+        query = query.filter(models.ActivityLog.company_id == company_id)
+    deleted_count = query.delete()
+    db.commit()
+    return deleted_count

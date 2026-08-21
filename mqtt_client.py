@@ -36,17 +36,17 @@ def on_message(client, userdata, msg):
         data = json.loads(payload_str)
         data_type = data.get("type", "environmental")
 
-        db = SessionLocal()
-        try:
-            if data_type == "environmental":
-                crud.save_env_sensor_data(db, gateway_id, node_id, data)
-            elif data_type == "ai_vision":
-                crud.save_vision_snapshot(db, gateway_id, node_id, data)
-            else:
-                print(f"[WARN] Unknown data type: {data_type}")
-                return
-        finally:
-            db.close()
+        # db = SessionLocal()
+        # try:
+        #     if data_type == "environmental":
+        #         crud.save_env_sensor_data(db, gateway_id, node_id, data)
+        #     elif data_type == "ai_vision":
+        #         crud.save_vision_snapshot(db, gateway_id, node_id, data)
+        #     else:
+        #         print(f"[WARN] Unknown data type: {data_type}")
+        #         return
+        # finally:
+        #     db.close()
 
         # Broadcast update to WebSocket clients
         if manager and loop:

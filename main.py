@@ -1,4 +1,4 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, HTTPException, BackgroundTasks
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, HTTPException, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import database
@@ -65,7 +65,7 @@ def verify_jwt(token: str):
 # ── RBAC ─────────────────────────────────────────────────────────
 
 def get_accessible_gateways(company_id: str, features: list):
-    if 'view_all_nodes' in features:
+    if 'view_all_nodes' in features or company_id == 'comp_fmipa_ugm':
         return None  # None = all gateways
         
     db = database.SessionLocal()
@@ -94,6 +94,17 @@ def format_env_node(node, env_config, latest_data, hourly_data):
     ispu_info = {"value": 0, "label": "Offline", "color": "#6b7280", "status": "baik"}
 
     if latest_data:
+        # Calculate ISPU if not provided directly by Prometheus
+        if not latest_data.ispu:
+            latest_data.ispu = crud.calculate_ispu(
+                pm10=latest_data.pm10,
+                pm25=latest_data.pm25,
+                co=latest_data.co,
+                no2=latest_data.no2,
+                so2=latest_data.so2,
+                o3=latest_data.o3
+            )
+            
         ispu_info = crud.get_ispu_level(latest_data.ispu)
         ispu_info["value"] = latest_data.ispu
 
@@ -208,6 +219,74 @@ def format_gateway_data(db, gateway, accessible_gateways=None):
     }
 
 
+def format_gateway_data_prometheus(db, gateway, prom_state, accessible_gateways=None):
+    """Format a gateway with all its nodes, using Prometheus data for latest values."""
+    if accessible_gateways is not None and gateway.id not in accessible_gateways:
+        return None
+
+    nodes = crud.get_nodes_by_gateway(db, gateway.id)
+    formatted_nodes = []
+
+    for node in nodes:
+        node_prom_data = prom_state.get(node.id, {})
+        
+        if node.type == "environmental":
+            env_config = crud.get_env_config(db, node.id)
+            
+            # Reconstruct latest_data object from Prometheus values
+            class MockLatestData:
+                def __init__(self, data):
+                    self.temperature = data.get('temperature', 0)
+                    self.humidity = data.get('humidity', 0)
+                    self.pm25 = data.get('pm25', 0)
+                    self.pm10 = data.get('pm10', 0)
+                    self.co = data.get('co', 0)
+                    self.no2 = data.get('no2', 0)
+                    self.so2 = data.get('so2', 0)
+                    self.o3 = data.get('o3', 0)
+                    self.ispu = data.get('ispu', 0)
+            
+            latest = MockLatestData(node_prom_data) if node_prom_data else None
+            
+            formatted_nodes.append(format_env_node(node, env_config, latest, []))
+            
+        elif node.type == "ai_vision":
+            config = crud.get_vision_config(db, node.id)
+            
+            # Reconstruct latest_snapshot object from Prometheus values
+            class MockLatestSnapshot:
+                def __init__(self, data):
+                    self.person_count = int(data.get('person_count', 0))
+                    self.density = data.get('density', 0)
+                    # Simple logic to reconstruct density_level
+                    warn = config.density_warning if config else 0.1
+                    alert = config.density_alert if config else 0.2
+                    if self.density >= alert:
+                        self.density_level = "alert"
+                    elif self.density >= warn:
+                        self.density_level = "warning"
+                    else:
+                        self.density_level = "normal"
+                    
+                    # Convert timestamp back to datetime if available
+                    ts = data.get('timestamp')
+                    self.timestamp = datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc) if ts else datetime.datetime.utcnow()
+
+            latest_snap = MockLatestSnapshot(node_prom_data) if node_prom_data else None
+            formatted_nodes.append(format_vision_node(node, config, latest_snap))
+
+    return {
+        "id": gateway.id,
+        "name": gateway.name,
+        "location": gateway.location,
+        "lat": gateway.lat,
+        "lon": gateway.lon,
+        "online": gateway.online,
+        "lastUpdate": gateway.last_update.isoformat() if gateway.last_update else "",
+        "nodes": formatted_nodes,
+    }
+
+
 # ── WebSocket Manager ────────────────────────────────────────────
 
 class ConnectionManager:
@@ -231,8 +310,18 @@ class ConnectionManager:
                 gateways = crud.get_gateways(db)
                 db_gw_ids = set([gw.id for gw in gateways])
                 results = []
+                
+                # Fetch Prometheus state for all nodes in these gateways
+                authorized_node_ids = []
                 for gw in gateways:
-                    formatted = format_gateway_data(db, gw, accessible_gateways)
+                    if accessible_gateways is None or gw.id in accessible_gateways:
+                        nodes = crud.get_nodes_by_gateway(db, gw.id)
+                        authorized_node_ids.extend([n.id for n in nodes])
+                
+                prom_state = crud.get_prometheus_latest_state(authorized_node_ids)
+                
+                for gw in gateways:
+                    formatted = format_gateway_data_prometheus(db, gw, prom_state, accessible_gateways)
                     if formatted:
                         results.append(formatted)
 
@@ -303,11 +392,31 @@ class ConnectionManager:
         finally:
             db.close()
 
+    async def broadcast_system_alert(self, alert_payload: dict):
+        """Broadcast system alert to all connected clients."""
+        payload = {
+            "type": "SYSTEM_ALERT",
+            "alert": alert_payload,
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        for conn in self.active_connections:
+            try:
+                await conn["ws"].send_json(payload)
+            except Exception:
+                pass
+
 
 manager = ConnectionManager()
 
 # Create DB tables
 models.Base.metadata.create_all(bind=database.engine)
+
+# Seed database with users and roles if empty
+try:
+    from migrate_auth import migrate_auth
+    migrate_auth()
+except Exception as e:
+    print(f"Warning: Failed to run migrate_auth: {e}")
 
 # Ensure badge_color column exists (PostgreSQL specific)
 try:
@@ -324,11 +433,47 @@ try:
 finally:
     db.close()
 
-app = FastAPI(title="SINERGI Industrial IoT Backend API")
+tags_metadata = [
+    {
+        "name": "Authentication & Profile",
+        "description": "Registrasi akun pengguna, autentikasi login JWT, manajemen profil, dan preferensi dashboard.",
+    },
+    {
+        "name": "Access Control (RBAC)",
+        "description": "Manajemen hak akses berbasis peran (Role-Based Access Control). Buat dan kelola peran kustom, tetapkan izin fitur, dan atur hak akses pengguna.",
+    },
+    {
+        "name": "Telemetry & Monitoring",
+        "description": "Status telemetri sensor realtime langsung dari database deret waktu Prometheus serta data tren historis.",
+    },
+    {
+        "name": "Devices & Gateways",
+        "description": "Manajemen gateway gudang, pembaruan koordinat GPS (Latitude/Longitude), dan pengaturan node IoT.",
+    },
+    {
+        "name": "Node Configuration",
+        "description": "Pengaturan batas ambang batas (threshold) sensor lingkungan serta parameter kamera deteksi AI Vision.",
+    },
+    {
+        "name": "Device Provisioning",
+        "description": "Manajemen siklus hidup hardware: pembuatan massal Serial Number & PIN serta klaim perangkat oleh perusahaan.",
+    },
+    {
+        "name": "Activity Logs & Alerts",
+        "description": "Pencatatan riwayat audit keamanan sistem, log aktivitas pengguna, dan integrasi webhook Prometheus Alertmanager.",
+    },
+    {
+        "name": "Simulator & Ingestion",
+        "description": "Endpoint ingesti data telemetri langsung untuk simulator sensor IoT dan pengujian sistem.",
+    },
+]
 
-@app.on_event("startup")
-def startup_event():
-    start_mqtt_client(manager)
+app = FastAPI(
+    title="API Backend SINERGI Industrial IoT",
+    description="Layanan Backend Platform SINERGI Industrial IoT — terintegrasi dengan Prometheus Telemetry, MQTT EMQX, AI Vision Crowding Detection, dan Multi-tenant RBAC.",
+    version="1.0.0",
+    openapi_tags=tags_metadata
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -375,7 +520,7 @@ class LoginRequest(BaseModel):
     username: str
     password: str
 
-@app.post("/api/v1/auth/register")
+@app.post("/api/v1/auth/register", tags=["Authentication & Profile"], summary="Registrasi akun pengguna baru")
 def register(req: RegisterRequest):
     db = database.SessionLocal()
     try:
@@ -402,7 +547,36 @@ def register(req: RegisterRequest):
     finally:
         db.close()
 
-@app.post("/api/v1/auth/login")
+class UserProfileUpdate(BaseModel):
+    name: str
+    company: str
+    password: Optional[str] = None
+
+@app.put("/api/v1/auth/me", tags=["Authentication & Profile"], summary="Perbarui profil pengguna")
+def update_profile(req: UserProfileUpdate, token: str = Query(...)):
+    payload = verify_jwt(token)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+        
+    db = database.SessionLocal()
+    try:
+        user_id = payload.get("sub")
+        user = db.query(models.User).filter(models.User.user_id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+            
+        user.name = req.name
+        user.company = req.company
+        
+        if req.password:
+            user.password_hash = hashlib.sha256(req.password.encode()).hexdigest()
+            
+        db.commit()
+        return {"success": True, "message": "Profile updated successfully"}
+    finally:
+        db.close()
+
+@app.post("/api/v1/auth/login", tags=["Authentication & Profile"], summary="Login akun dan dapatkan token JWT")
 def login(req: LoginRequest):
     db = database.SessionLocal()
     try:
@@ -453,7 +627,7 @@ def login(req: LoginRequest):
     finally:
         db.close()
 
-@app.get("/api/v1/auth/me")
+@app.get("/api/v1/auth/me", tags=["Authentication & Profile"], summary="Ambil data profil & izin hak akses saat ini")
 def get_me(token: str):
     payload = verify_jwt(token)
     if not payload:
@@ -489,7 +663,7 @@ def get_me(token: str):
 class PreferencesUpdate(BaseModel):
     preferences: dict
 
-@app.put("/api/v1/auth/me/preferences")
+@app.put("/api/v1/auth/me/preferences", tags=["Authentication & Profile"], summary="Perbarui preferensi tampilan dashboard pengguna")
 def update_preferences(req: PreferencesUpdate, token: str = Query(...)):
     payload = verify_jwt(token)
     if not payload:
@@ -523,7 +697,7 @@ class UserUpdate(BaseModel):
     customFeatures: Optional[list[str]] = None
 
 # ── Users RBAC ──
-@app.get("/api/v1/auth/users")
+@app.get("/api/v1/auth/users", tags=["Access Control (RBAC)"], summary="Daftar semua pengguna dan peran yang ditetapkan")
 def get_all_users(token: str):
     payload = verify_jwt(token)
     if not payload or 'manage_users' not in payload.get('features', []):
@@ -559,7 +733,7 @@ def get_all_users(token: str):
     finally:
         db.close()
 
-@app.put("/api/v1/auth/users/{user_id}")
+@app.put("/api/v1/auth/users/{user_id}", tags=["Access Control (RBAC)"], summary="Perbarui peran dan izin kustom pengguna")
 def update_user_rbac(user_id: str, req: UserUpdate, token: str = Query(...)):
     payload = verify_jwt(token)
     if not payload or 'manage_users' not in payload.get('features', []):
@@ -581,7 +755,7 @@ def update_user_rbac(user_id: str, req: UserUpdate, token: str = Query(...)):
     finally:
         db.close()
 
-@app.delete("/api/v1/auth/users/{user_id}")
+@app.delete("/api/v1/auth/users/{user_id}", tags=["Access Control (RBAC)"], summary="Hapus akun pengguna")
 def delete_user_rbac(user_id: str, token: str = Query(...)):
     payload = verify_jwt(token)
     if not payload or 'manage_users' not in payload.get('features', []):
@@ -603,7 +777,7 @@ def delete_user_rbac(user_id: str, token: str = Query(...)):
         db.close()
 
 # ── Roles RBAC ──
-@app.get("/api/v1/auth/roles")
+@app.get("/api/v1/auth/roles", tags=["Access Control (RBAC)"], summary="Daftar semua peran sistem dan hak aksesnya")
 def get_all_roles(token: str):
     payload = verify_jwt(token)
     if not payload or 'manage_roles' not in payload.get('features', []):
@@ -624,7 +798,7 @@ def get_all_roles(token: str):
     finally:
         db.close()
 
-@app.post("/api/v1/auth/roles")
+@app.post("/api/v1/auth/roles", tags=["Access Control (RBAC)"], summary="Buat peran (role) kustom baru")
 def create_role(req: RoleCreate, token: str = Query(...)):
     payload = verify_jwt(token)
     if not payload or 'manage_roles' not in payload.get('features', []):
@@ -650,7 +824,7 @@ def create_role(req: RoleCreate, token: str = Query(...)):
     finally:
         db.close()
 
-@app.put("/api/v1/auth/roles/{role_id}")
+@app.put("/api/v1/auth/roles/{role_id}", tags=["Access Control (RBAC)"], summary="Perbarui izin hak akses peran kustom")
 def update_role(role_id: str, req: RoleUpdate, token: str = Query(...)):
     payload = verify_jwt(token)
     if not payload or 'manage_roles' not in payload.get('features', []):
@@ -679,7 +853,7 @@ def update_role(role_id: str, req: RoleUpdate, token: str = Query(...)):
     finally:
         db.close()
 
-@app.delete("/api/v1/auth/roles/{role_id}")
+@app.delete("/api/v1/auth/roles/{role_id}", tags=["Access Control (RBAC)"], summary="Hapus peran kustom")
 def delete_role(role_id: str, token: str = Query(...)):
     payload = verify_jwt(token)
     if not payload or 'manage_roles' not in payload.get('features', []):
@@ -728,7 +902,7 @@ class GatewayUpdate(BaseModel):
     lon: Optional[float] = None
 
 
-@app.post("/api/v1/env/config/{node_id}")
+@app.post("/api/v1/env/config/{node_id}", tags=["Node Configuration"], summary="Perbarui ambang batas (threshold) alarm sensor lingkungan")
 def update_env_config(node_id: str, body: EnvConfigUpdate, background_tasks: BackgroundTasks):
     db = database.SessionLocal()
     try:
@@ -744,7 +918,66 @@ def update_env_config(node_id: str, body: EnvConfigUpdate, background_tasks: Bac
         db.close()
 
 
-@app.put("/api/v1/gateways/{gateway_id}")
+@app.get("/api/v1/telemetry/monitoring/state", tags=["Telemetry & Monitoring"], summary="Ambil state telemetri terkini langsung dari Prometheus")
+def get_monitoring_state(token: str):
+    """Endpoint for monitoring page to get the latest state directly from Prometheus."""
+    payload = verify_jwt(token)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+        
+    features = payload.get("features", [])
+    company_id = payload.get("company_id")
+    accessible_gateways = get_accessible_gateways(company_id, features)
+
+    db = database.SessionLocal()
+    try:
+        gateways = crud.get_gateways(db)
+        
+        # Collect all node IDs that the user has access to
+        authorized_node_ids = []
+        authorized_gateways = []
+        for gw in gateways:
+            if accessible_gateways is None or gw.id in accessible_gateways:
+                authorized_gateways.append(gw)
+                nodes = crud.get_nodes_by_gateway(db, gw.id)
+                for n in nodes:
+                    authorized_node_ids.append(n.id)
+                    
+        # Fetch the latest state of all these nodes from Prometheus
+        prom_state = crud.get_prometheus_latest_state(authorized_node_ids)
+        
+        results = []
+        db_gw_ids = set([gw.id for gw in gateways])
+        
+        for gw in authorized_gateways:
+            formatted = format_gateway_data_prometheus(db, gw, prom_state, accessible_gateways)
+            if formatted:
+                results.append(formatted)
+
+        # Inject claimed but non-existent gateways as offline/empty
+        if accessible_gateways is not None:
+            for gw_id in accessible_gateways:
+                if gw_id not in db_gw_ids:
+                    results.append({
+                        "id": gw_id,
+                        "name": f"Gateway {gw_id[-4:]}",
+                        "location": "Pending Setup",
+                        "lat": -6.200000,
+                        "lon": 106.816666,
+                        "online": False,
+                        "lastUpdate": "",
+                        "nodes": []
+                    })
+
+        return {
+            "type": "PROMETHEUS_STATE",
+            "gateways": results,
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()
+        }
+    finally:
+        db.close()
+
+@app.put("/api/v1/gateways/{gateway_id}", tags=["Devices & Gateways"], summary="Perbarui informasi gateway gudang dan koordinat GPS")
 def update_gateway_info(gateway_id: str, body: GatewayUpdate, background_tasks: BackgroundTasks):
     db = database.SessionLocal()
     try:
@@ -761,7 +994,7 @@ def update_gateway_info(gateway_id: str, body: GatewayUpdate, background_tasks: 
         db.close()
 
 
-@app.post("/api/v1/nodes/{node_id}")
+@app.post("/api/v1/nodes/{node_id}", tags=["Devices & Gateways"], summary="Perbarui nama node dan penempatan zona")
 def update_node_info(node_id: str, body: NodeUpdate, background_tasks: BackgroundTasks):
     db = database.SessionLocal()
     try:
@@ -780,7 +1013,7 @@ def update_node_info(node_id: str, body: NodeUpdate, background_tasks: Backgroun
 
 from typing import Dict, Any
 
-@app.post("/api/v1/simulator/ingest/{gateway_id}/{node_id}")
+@app.post("/api/v1/simulator/ingest/{gateway_id}/{node_id}", tags=["Simulator & Ingestion"], summary="Ingesti payload data telemetri simulasi")
 def simulator_ingest(gateway_id: str, node_id: str, payload: Dict[str, Any], background_tasks: BackgroundTasks):
     db = database.SessionLocal()
     try:
@@ -797,7 +1030,7 @@ def simulator_ingest(gateway_id: str, node_id: str, payload: Dict[str, Any], bac
     finally:
         db.close()
 
-@app.get("/api/v1/telemetry/historical")
+@app.get("/api/v1/telemetry/historical", tags=["Telemetry & Monitoring"], summary="Ambil data deret waktu telemetri historis dari Prometheus")
 def get_historical_telemetry_endpoint(node_ids: str = Query(...), metric: str = Query("temperature"), time_range: str = Query("24h")):
     db = database.SessionLocal()
     try:
@@ -809,12 +1042,12 @@ def get_historical_telemetry_endpoint(node_ids: str = Query(...), metric: str = 
     finally:
         db.close()
 
-@app.get("/")
+@app.get("/", tags=["Telemetry & Monitoring"], summary="Pemeriksaan status server backend (Health Check)")
 def read_root():
     return {"status": "ok", "message": "SINERGI Industrial IoT Backend is running"}
 
 
-@app.get("/api/v1/vision/config/{node_id}")
+@app.get("/api/v1/vision/config/{node_id}", tags=["Node Configuration"], summary="Ambil konfigurasi kamera deteksi AI Vision")
 def get_vision_config(node_id: str):
     db = database.SessionLocal()
     try:
@@ -833,7 +1066,7 @@ def get_vision_config(node_id: str):
         db.close()
 
 
-@app.post("/api/v1/vision/config/{node_id}")
+@app.post("/api/v1/vision/config/{node_id}", tags=["Node Configuration"], summary="Perbarui konfigurasi kamera AI Vision")
 def update_vision_config(node_id: str, body: VisionConfigUpdate, background_tasks: BackgroundTasks):
     db = database.SessionLocal()
     try:
@@ -864,7 +1097,7 @@ class DeviceClaimRequest(BaseModel):
     sn: str
     pin: str
 
-@app.get("/api/v1/provisioning/devices")
+@app.get("/api/v1/provisioning/devices", tags=["Device Provisioning"], summary="Daftar semua perangkat gateway yang terdaftar di sistem")
 def get_all_devices():
     db = database.SessionLocal()
     try:
@@ -884,7 +1117,7 @@ def get_all_devices():
     finally:
         db.close()
 
-@app.post("/api/v1/provisioning/devices/generate")
+@app.post("/api/v1/provisioning/devices/generate", tags=["Device Provisioning"], summary="Pembuatan massal Serial Number dan PIN perangkat baru")
 def generate_devices(req: DeviceGenerateRequest):
     import random
     
@@ -919,7 +1152,7 @@ def generate_devices(req: DeviceGenerateRequest):
     finally:
         db.close()
 
-@app.post("/api/v1/provisioning/devices/claim")
+@app.post("/api/v1/provisioning/devices/claim", tags=["Device Provisioning"], summary="Klaim perangkat gateway oleh perusahaan pengguna")
 def claim_device(req: DeviceClaimRequest, token: str = Query(...)):
     payload = verify_jwt(token)
     if not payload:
@@ -948,3 +1181,117 @@ def claim_device(req: DeviceClaimRequest, token: str = Query(...)):
     finally:
         db.close()
 
+
+class LogCreate(BaseModel):
+    action: str
+    detail: str
+
+@app.get("/api/v1/logs", tags=["Activity Logs & Alerts"], summary="Ambil riwayat log aktivitas dan audit keamanan sistem")
+def get_logs(token: str = Query(...)):
+    payload = verify_jwt(token)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+        
+    db = database.SessionLocal()
+    try:
+        features = payload.get("features", [])
+        company_id = payload.get("company_id")
+        filter_company = None if crud.can_view_all_activity_logs(features, company_id) else company_id
+
+        logs = crud.get_activity_logs(db, company_id=filter_company)
+        
+        result = []
+        for log in logs:
+            result.append({
+                "id": log.id,
+                "timestamp": log.timestamp.isoformat(),
+                "action": log.action,
+                "detail": log.detail,
+                "username": log.username
+            })
+            
+        return {"logs": result}
+    finally:
+        db.close()
+
+@app.post("/api/v1/logs", tags=["Activity Logs & Alerts"], summary="Buat entri log aktivitas baru")
+def create_log(req: LogCreate, token: str = Query(...)):
+    payload = verify_jwt(token)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+        
+    db = database.SessionLocal()
+    try:
+        crud.create_activity_log(
+            db=db,
+            action=req.action,
+            detail=req.detail,
+            user_id=payload.get("sub"),
+            username=payload.get("username"),
+            company_id=payload.get("company_id")
+        )
+        return {"success": True}
+    finally:
+        db.close()
+
+@app.delete("/api/v1/logs", tags=["Activity Logs & Alerts"], summary="Hapus riwayat log aktivitas (Khusus Super Admin)")
+def clear_logs(token: str = Query(...)):
+    payload = verify_jwt(token)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+        
+    features = payload.get("features", [])
+    
+    # As requested by the user, only the highest role or those with a specific feature
+    # like 'manage_roles' or 'manage_users' or 'clear_logs' can delete.
+    if 'manage_roles' not in features and 'manage_users' not in features:
+        raise HTTPException(status_code=403, detail="Forbidden: You do not have permission to clear logs.")
+        
+    db = database.SessionLocal()
+    try:
+        company_id = payload.get("company_id")
+        filter_company = None if crud.can_view_all_activity_logs(features, company_id) else company_id
+
+        deleted_count = crud.clear_activity_logs(db, company_id=filter_company)
+        return {"success": True, "deleted": deleted_count}
+    finally:
+        db.close()
+
+@app.post("/api/v1/alerts/webhook", tags=["Activity Logs & Alerts"], summary="Webhook penerima notifikasi alarm dari Prometheus Alertmanager")
+async def alertmanager_webhook(request: Request):
+    payload = await request.json()
+    db = database.SessionLocal()
+    try:
+        for alert in payload.get('alerts', []):
+            if alert.get('status') == 'firing':
+                alert_name = alert['labels'].get('alertname', 'Alert')
+                gateway_id = alert['labels'].get('gateway_id', 'Unknown')
+                node_id = alert['labels'].get('node_id', 'Unknown')
+                summary = alert['annotations'].get('summary', 'System Alert')
+                description = alert['annotations'].get('description', '')
+                
+                crud.create_activity_log(
+                    db=db,
+                    action="alert",
+                    detail=f"[{alert_name}] [{gateway_id}/{node_id}] {summary} - {description}",
+                    user_id="system",
+                    username="Prometheus Alertmanager",
+                    company_id="system"
+                )
+                
+                # Broadcast the alert to WebSocket clients
+                alert_payload = {
+                    "alertname": alert_name,
+                    "gateway_id": gateway_id,
+                    "node_id": node_id,
+                    "summary": summary,
+                    "description": description
+                }
+                import asyncio
+                asyncio.create_task(manager.broadcast_system_alert(alert_payload))
+        return {"status": "success"}
+    except Exception as e:
+        print(f"Webhook error: {e}")
+        return {"status": "error", "detail": str(e)}
+    finally:
+        db.close()

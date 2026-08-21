@@ -115,3 +115,14 @@ class DeviceRegistry(Base):
     status = Column(String, default="unclaimed")
     company_id = Column(String, index=True, nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+class ActivityLog(Base):
+    __tablename__ = "activity_logs"
+
+    id = Column(String, primary_key=True, index=True)
+    user_id = Column(String, index=True, nullable=True)
+    username = Column(String, nullable=True)
+    company_id = Column(String, index=True, nullable=True)
+    action = Column(String, index=True)
+    detail = Column(String)
+    timestamp = Column(DateTime, default=datetime.datetime.utcnow, index=True)

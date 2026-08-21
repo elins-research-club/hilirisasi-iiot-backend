@@ -18,49 +18,49 @@ AUTH_DATA = {
       "id": "role_admin",
       "name": "Developer",
       "badgeColor": "#22c55e",
-      "features": ["view_dashboard", "view_maps", "view_monitoring", "configure_nodes", "view_logs", "export_logs", "view_settings", "manage_settings", "manage_users", "manage_roles", "manage_nodes", "manage_inventory"]
+      "features": ["view_dashboard", "view_maps", "view_monitoring", "view_analytics", "configure_nodes", "view_logs", "export_analytics", "view_settings", "manage_settings", "manage_users", "manage_roles", "manage_nodes", "manage_inventory"]
     },
     {
       "id": "role_operator",
       "name": "Warehouse Manager",
       "badgeColor": "#3b82f6",
-      "features": ["view_dashboard", "view_maps", "view_monitoring", "configure_nodes", "view_logs", "view_settings", "export_logs"]
+      "features": ["view_dashboard", "view_maps", "view_monitoring", "view_analytics", "configure_nodes", "view_logs", "view_settings", "export_analytics"]
     },
     {
       "id": "role_viewer",
       "name": "Safety Officer",
       "badgeColor": "#64e3d4",
-      "features": ["view_dashboard", "view_monitoring", "view_logs", "export_logs", "configure_nodes"]
+      "features": ["view_dashboard", "view_monitoring", "view_analytics", "view_logs", "export_analytics", "configure_nodes"]
     },
     {
       "id": "role_1780830774927_ynk4",
       "name": "Maintenance Technician",
       "badgeColor": "#8b5cf6",
-      "features": ["view_maps", "view_monitoring", "configure_nodes", "manage_nodes"]
+      "features": ["view_maps", "view_monitoring", "view_analytics", "configure_nodes", "manage_nodes"]
     },
     {
       "id": "role_1780830797120_g24w",
       "name": "Security Supervisor",
       "badgeColor": "#ce2c34",
-      "features": ["view_dashboard", "view_monitoring", "view_maps", "view_logs"]
+      "features": ["view_dashboard", "view_monitoring", "view_analytics", "view_maps", "view_logs"]
     },
     {
       "id": "role_1780830835476_a5uh",
       "name": "Executive Data Analyst",
       "badgeColor": "#e59524",
-      "features": ["view_dashboard", "view_logs", "export_logs"]
+      "features": ["view_dashboard", "view_logs", "export_analytics"]
     },
     {
       "id": "role_guest",
       "name": "Guest",
       "badgeColor": "#94a3b8",
-      "features": ["view_dashboard", "view_maps", "view_monitoring"]
+      "features": ["view_dashboard", "view_maps", "view_monitoring", "view_analytics"]
     },
     {
       "id": "role_1780846233134_2v2b",
       "name": "Co-Developer",
       "badgeColor": "#bf4a89",
-      "features": ["view_dashboard", "view_maps", "configure_nodes", "view_monitoring", "view_logs", "manage_nodes", "export_logs", "manage_settings", "manage_inventory", "view_settings"]
+      "features": ["view_dashboard", "view_maps", "configure_nodes", "view_monitoring", "view_analytics", "view_logs", "manage_nodes", "export_analytics", "manage_settings", "manage_inventory", "view_settings"]
     }
   ],
   "users": [
@@ -109,10 +109,20 @@ AUTH_DATA = {
       "username": "iiot",
       "password_hash": "fa986c6635965293ab6abcd405f6a7db5f333fe8a77551420a1c53bc69d4838d",
       "role_id": "role_1780846233134_2v2b",
-      "customFeatures": ["manage_inventory", "manage_settings", "export_logs", "view_logs", "configure_nodes", "manage_nodes", "view_settings"],
+      "customFeatures": ["manage_inventory", "manage_settings", "export_analytics", "view_logs", "configure_nodes", "manage_nodes", "view_settings"],
       "name": "Tim IIOT",
       "company": "FMIPA UGM",
       "company_id": "comp_fmipa_ugm"
+    },
+    {
+      "user_id": "usr_magang_001",
+      "username": "magang",
+      "password_hash": "bb5654a2cbfbbece83d0f94d2915c662beee7f58c51b9d5937dbf51b74a3af5f",
+      "role_id": "role_operator",
+      "customFeatures": [],
+      "name": "Siswa Magang",
+      "company": "IKEA Indonesia",
+      "company_id": "comp_ikea_id"
     }
   ]
 }
