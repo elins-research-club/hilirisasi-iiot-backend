@@ -87,7 +87,7 @@ def get_accessible_gateways(company_id: str, features: list):
 
 # ── Data Formatting ──────────────────────────────────────────────
 
-def format_env_node(node, env_config, latest_data, hourly_data):
+def format_env_node(node, env_config, latest_data, hourly_data, online_override=None, last_update_override=None):
     """Format an environmental node with its sensor data."""
     hourly_trend = []
     sensors = []
@@ -135,8 +135,8 @@ def format_env_node(node, env_config, latest_data, hourly_data):
         "name": node.name,
         "type": node.type,
         "zone": node.zone,
-        "online": node.online,
-        "lastUpdate": node.last_update.isoformat() if node.last_update else "",
+        "online": online_override if online_override is not None else node.online,
+        "lastUpdate": last_update_override if last_update_override is not None else (node.last_update.isoformat() if node.last_update else ""),
         "sensors": sensors,
         "ispu": ispu_info,
         "hourlyTrend": hourly_trend,
@@ -153,7 +153,7 @@ def format_env_node(node, env_config, latest_data, hourly_data):
     }
 
 
-def format_vision_node(node, config, latest_snapshot):
+def format_vision_node(node, config, latest_snapshot, online_override=None, last_update_override=None):
     """Format an AI Vision node with its config and latest detection."""
     vision_config = None
     last_detection = None
@@ -180,8 +180,8 @@ def format_vision_node(node, config, latest_snapshot):
         "name": node.name,
         "type": node.type,
         "zone": node.zone,
-        "online": node.online,
-        "lastUpdate": node.last_update.isoformat() if node.last_update else "",
+        "online": online_override if online_override is not None else node.online,
+        "lastUpdate": last_update_override if last_update_override is not None else (node.last_update.isoformat() if node.last_update else ""),
         "visionConfig": vision_config,
         "lastDetection": last_detection,
     }
@@ -226,9 +226,23 @@ def format_gateway_data_prometheus(db, gateway, prom_state, accessible_gateways=
 
     nodes = crud.get_nodes_by_gateway(db, gateway.id)
     formatted_nodes = []
+    
+    any_node_online = False
+    latest_gateway_update = gateway.last_update.isoformat() if gateway.last_update else ""
 
     for node in nodes:
         node_prom_data = prom_state.get(node.id, {})
+        
+        # Calculate dynamic online status (5 minutes = 300 seconds threshold)
+        ts = node_prom_data.get('timestamp', 0)
+        is_online = (datetime.datetime.utcnow().timestamp() - ts) <= 300 if ts else False
+        last_update_str = datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc).isoformat() if ts else (node.last_update.isoformat() if node.last_update else "")
+        
+        if is_online:
+            any_node_online = True
+            
+        if ts and (not latest_gateway_update or last_update_str > latest_gateway_update):
+            latest_gateway_update = last_update_str
         
         if node.type == "environmental":
             env_config = crud.get_env_config(db, node.id)
@@ -248,7 +262,7 @@ def format_gateway_data_prometheus(db, gateway, prom_state, accessible_gateways=
             
             latest = MockLatestData(node_prom_data) if node_prom_data else None
             
-            formatted_nodes.append(format_env_node(node, env_config, latest, []))
+            formatted_nodes.append(format_env_node(node, env_config, latest, [], online_override=is_online, last_update_override=last_update_str))
             
         elif node.type == "ai_vision":
             config = crud.get_vision_config(db, node.id)
@@ -269,11 +283,11 @@ def format_gateway_data_prometheus(db, gateway, prom_state, accessible_gateways=
                         self.density_level = "normal"
                     
                     # Convert timestamp back to datetime if available
-                    ts = data.get('timestamp')
-                    self.timestamp = datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc) if ts else datetime.datetime.utcnow()
+                    ts_data = data.get('timestamp')
+                    self.timestamp = datetime.datetime.fromtimestamp(ts_data, tz=datetime.timezone.utc) if ts_data else datetime.datetime.utcnow()
 
             latest_snap = MockLatestSnapshot(node_prom_data) if node_prom_data else None
-            formatted_nodes.append(format_vision_node(node, config, latest_snap))
+            formatted_nodes.append(format_vision_node(node, config, latest_snap, online_override=is_online, last_update_override=last_update_str))
 
     return {
         "id": gateway.id,
@@ -281,8 +295,8 @@ def format_gateway_data_prometheus(db, gateway, prom_state, accessible_gateways=
         "location": gateway.location,
         "lat": gateway.lat,
         "lon": gateway.lon,
-        "online": gateway.online,
-        "lastUpdate": gateway.last_update.isoformat() if gateway.last_update else "",
+        "online": any_node_online if nodes else gateway.online,
+        "lastUpdate": latest_gateway_update,
         "nodes": formatted_nodes,
     }
 
