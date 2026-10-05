@@ -5,3 +5,5 @@ test_db.py
 .env
 .pytest_cache/
 *.pyc
+*.log
+state.json
