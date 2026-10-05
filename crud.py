@@ -373,7 +373,7 @@ def seed_warehouse_data(db: Session):
             "id": "IIOT-GATEWAY",
             "name": "IIOT Gateway",
             "company_id": "comp_fmipa_ugm",
-            "location": "Lokasi Monev",
+            "location": "Stechoq",
             "lat": 0.0,
             "lon": 0.0,
         },
