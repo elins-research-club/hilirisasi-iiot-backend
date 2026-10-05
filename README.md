@@ -3,6 +3,8 @@
 ## Overview
 This is the backend service for the SINERGI Industrial IoT application. Built with **FastAPI**, it handles real-time data streaming via WebSockets, IoT gateway provisioning, Role-Based Access Control (RBAC), and integrates with an MQTT broker to receive live telemetry from distributed physical gateways and AI vision nodes.
 
+Panduan deployment tersedia di [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
 ## Features
 - **Real-Time WebSockets**: Streams live sensor data to authenticated clients dynamically.
 - **Hardware Provisioning**: Validates and claims IoT Gateways using a secure Serial Number and PIN mechanism.

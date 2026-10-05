@@ -1,13 +1,13 @@
 """Generate Prometheus rules from config/thresholds.json.
 
-Run from fastapi_iiot: python generate_alert_rules.py
+Run from fastapi_iiot: python scripts/generate_alert_rules.py
 """
 import json
 import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-CONFIG = Path(__file__).resolve().parent / "config" / "thresholds.json"
+CONFIG = ROOT / "config" / "thresholds.json"
 OUTPUT = ROOT / "prometheus" / "alert.rules.yml"
 
 
