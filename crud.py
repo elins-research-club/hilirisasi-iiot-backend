@@ -75,13 +75,16 @@ def _calc_sub_index(concentration: float, breakpoints: list) -> int:
 
 def calculate_ispu(pm25=0, pm10=0, co=0, no2=0, so2=0, o3=0) -> int:
     """Calculate ISPU Indonesia (max of all sub-indices)."""
+    # Hardware payloads may legitimately omit a sensor during warm-up or when
+    # that sensor is not installed; treat missing values as unavailable/zero.
+    values = [0 if value is None else value for value in (pm25, pm10, co, no2, so2, o3)]
     sub_indices = [
-        _calc_sub_index(pm25, ISPU_BREAKPOINTS_PM25),
-        _calc_sub_index(pm10, ISPU_BREAKPOINTS_PM10),
-        _calc_sub_index(co, ISPU_BREAKPOINTS_CO),
-        _calc_sub_index(no2, ISPU_BREAKPOINTS_NO2),
-        _calc_sub_index(so2, ISPU_BREAKPOINTS_SO2),
-        _calc_sub_index(o3, ISPU_BREAKPOINTS_O3),
+        _calc_sub_index(values[0], ISPU_BREAKPOINTS_PM25),
+        _calc_sub_index(values[1], ISPU_BREAKPOINTS_PM10),
+        _calc_sub_index(values[2], ISPU_BREAKPOINTS_CO),
+        _calc_sub_index(values[3], ISPU_BREAKPOINTS_NO2),
+        _calc_sub_index(values[4], ISPU_BREAKPOINTS_SO2),
+        _calc_sub_index(values[5], ISPU_BREAKPOINTS_O3),
     ]
     return max(sub_indices) if sub_indices else 0
 
@@ -102,7 +105,7 @@ def get_ispu_level(ispu: int) -> dict:
 # ── Gateway & Node Queries ───────────────────────────────────────
 
 def get_gateways(db: Session):
-    return db.query(models.Gateway).all()
+    return db.query(models.Gateway).filter(models.Gateway.id == "IIOT-GATEWAY").all()
 
 
 def get_nodes_by_gateway(db: Session, gateway_id: str):
@@ -366,6 +369,14 @@ def update_gateway_info(db: Session, gateway_id: str, data: dict):
 def seed_warehouse_data(db: Session):
     """Seed warehouse gateways and nodes for IKEA Indonesia & Indogrosir."""
     gateways = [
+        {
+            "id": "IIOT-GATEWAY",
+            "name": "IIOT Gateway",
+            "company_id": "comp_fmipa_ugm",
+            "location": "Lokasi Monev",
+            "lat": 0.0,
+            "lon": 0.0,
+        },
         # IKEA Indonesia
         {
             "id": "GW-IKEA-JKT-01",
@@ -403,6 +414,7 @@ def seed_warehouse_data(db: Session):
     ]
 
     nodes = [
+        {"id": "e02d6ee6c5f39cfd", "gateway_id": "IIOT-GATEWAY", "name": "node-2", "type": "environmental", "zone": "Area Monitoring"},
         # IKEA Jakarta nodes
         {"id": "ENV-IKEA-JKT-001", "gateway_id": "GW-IKEA-JKT-01", "name": "Zone A - Rack Storage", "type": "environmental", "zone": "Zone A"},
         {"id": "ENV-IKEA-JKT-002", "gateway_id": "GW-IKEA-JKT-01", "name": "Zone B - Cold Storage", "type": "environmental", "zone": "Zone B"},
@@ -462,6 +474,9 @@ def get_historical_telemetry(db: Session, node_ids: list[str], metric: str, time
     if time_range == '1h':
         start_time = now - 3600
         step = '1m'
+    elif time_range == '6h':
+        start_time = now - (6 * 3600)
+        step = '5m'
     elif time_range == '24h':
         start_time = now - 86400
         step = '1h'
@@ -475,8 +490,8 @@ def get_historical_telemetry(db: Session, node_ids: list[str], metric: str, time
         start_time = now - 86400
         step = '1h'
         
-    # Mapping nama metrik (misal: temperature -> sinergi_temperature)
-    prom_metric = f"sinergi_{metric}"
+    # Mapping nama metrik (misal: temperature -> iiot_temperature)
+    prom_metric = f"iiot_{metric}"
     node_regex = "|".join(node_ids)
     base_query = f'{prom_metric}{{node_id=~"{node_regex}"}}'
     
@@ -551,7 +566,7 @@ def get_historical_telemetry(db: Session, node_ids: list[str], metric: str, time
         }
 
 def get_prometheus_latest_state(node_ids: list[str]):
-    """Query Prometheus for the latest values of all sinergi_* metrics for the given nodes."""
+    """Query Prometheus for the latest values of all iiot_* metrics for the given nodes."""
     if not node_ids:
         return {}
         
@@ -563,9 +578,9 @@ def get_prometheus_latest_state(node_ids: list[str]):
     prom_url = os.getenv("PROMETHEUS_URL", "http://prometheus:9090")
     query_url = f"{prom_url}/api/v1/query"
     
-    # Query all metrics starting with sinergi_ for the specific nodes
+    # Query all metrics starting with iiot_ for the specific nodes
     node_regex = "|".join(node_ids)
-    query = f'{{__name__=~"sinergi_.*", node_id=~"{node_regex}"}}'
+    query = f'{{__name__=~"iiot_.*", node_id=~"{node_regex}"}}'
     
     payload = urllib.parse.urlencode({'query': query}).encode('utf-8')
     
@@ -584,8 +599,8 @@ def get_prometheus_latest_state(node_ids: list[str]):
                 if not node_id or node_id not in latest_state:
                     continue
                     
-                # hapus prefix 'sinergi_'
-                key = metric_name.replace('sinergi_', '')
+                # hapus prefix 'iiot_'
+                key = metric_name.replace('iiot_', '')
                 value = float(res['value'][1])
                 timestamp = float(res['value'][0])
                 

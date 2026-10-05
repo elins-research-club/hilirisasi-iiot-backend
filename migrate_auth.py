@@ -67,7 +67,7 @@ AUTH_DATA = {
     {
       "user_id": "usr_admin_001",
       "username": "admin",
-      "password_hash": "ccf8c8fcd937cf34a979bbdc1442f766e7aca24a01ed2015b97a874a8b4799ae",
+      "password_hash": "240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9",
       "role_id": "role_admin",
       "customFeatures": [],
       "name": "Hanif Nugraha",

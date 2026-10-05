@@ -1,0 +1,14 @@
+{
+  "temperature": {"unit": "°C", "threshold": 35, "min": 0, "max": 40, "zones": [[15, "danger"], [18, "warning"], [26, "good"], [30, "warning"], [40, "danger"]]},
+  "humidity": {"unit": "%", "threshold": 80, "min": 0, "max": 100, "zones": [[30, "danger"], [40, "warning"], [60, "good"], [70, "warning"], [100, "danger"]]},
+  "pressure": {"unit": "hPa", "threshold": 1013, "min": 900, "max": 1100, "zones": [[1100, "good"]]},
+  "pm25": {"unit": "µg/m³", "threshold": 55.4, "min": 0, "max": 100, "zones": [[15.5, "good"], [55.4, "warning"], [100, "danger"]]},
+  "pm10": {"unit": "µg/m³", "threshold": 150, "min": 0, "max": 300, "zones": [[50, "good"], [150, "warning"], [300, "danger"]]},
+  "pm1": {"unit": "µg/m³", "threshold": 50, "min": 0, "max": 100, "zones": [[25, "good"], [50, "warning"], [100, "danger"]]},
+  "co": {"unit": "µg/m³", "threshold": 8000, "min": 0, "max": 16000, "zones": [[4000, "good"], [8000, "warning"], [16000, "danger"]]},
+  "no2": {"unit": "µg/m³", "threshold": 200, "min": 0, "max": 300, "zones": [[80, "good"], [200, "warning"], [300, "danger"]]},
+  "so2": {"unit": "µg/m³", "threshold": 180, "min": 0, "max": 360, "zones": [[90, "good"], [180, "warning"], [360, "danger"]]},
+  "o3": {"unit": "µg/m³", "threshold": 235, "min": 0, "max": 470, "zones": [[120, "good"], [235, "warning"], [470, "danger"]]},
+  "co2": {"unit": "ppm", "threshold": 1000, "min": 0, "max": 2500, "zones": [[1000, "good"], [1500, "warning"], [2500, "danger"]]},
+  "battery_voltage": {"unit": "V", "threshold": 3.3, "direction": "low", "min": 3, "max": 4.5, "zones": [[3.4, "danger"], [3.7, "warning"], [4.5, "good"]]}
+}

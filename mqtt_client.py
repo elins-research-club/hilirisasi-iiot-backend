@@ -1,5 +1,6 @@
 import paho.mqtt.client as mqtt
 import json
+import datetime as dt
 from database import SessionLocal
 import crud
 import asyncio
@@ -11,7 +12,39 @@ load_dotenv()
 
 MQTT_BROKER = os.getenv("MQTT_BROKER", "127.0.0.1")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
-MQTT_TOPIC_PATTERN = "sinergi/iiot/+/+"  # sinergi/iiot/{gateway_id}/{node_id}
+MQTT_TOPIC_PATTERN = "/iiot/+"
+HARDWARE_GATEWAY_ID = os.getenv("HARDWARE_GATEWAY_ID", "IIOT-GATEWAY")
+HARDWARE_NODE_ID = os.getenv("HARDWARE_NODE_ID", "e02d6ee6c5f39cfd")
+
+
+def normalize_hardware_payload(data: dict) -> dict:
+    """Map the real ChirpStack-to-EMQX envelope to the dashboard shape."""
+    sensor = data.get("data") or {}
+    return {
+        "type": "environmental",
+        "gateway_id": HARDWARE_GATEWAY_ID,
+        "node_id": HARDWARE_NODE_ID,
+        "source_dev_eui": data.get("dev_eui"),
+        "event_id": f"{data.get('dev_eui')}-{data.get('f_cnt')}",
+        "sequence": data.get("f_cnt"),
+        "timestamp": data.get("received_at") or dt.datetime.now(dt.timezone.utc).isoformat(),
+        "temperature": sensor.get("temperature"),
+        "humidity": sensor.get("humidity"),
+        "current_ma": sensor.get("current_ma"),
+        "pressure": None,
+        "bme_gas": None,
+        "pm25": None,
+        "pm10": None,
+        "co": None,
+        "no2": None,
+        "so2": None,
+        "o3": None,
+        "co2": None,
+        "pm1": None,
+        "battery_voltage": None,
+        "power_mw": None,
+        "source": data.get("source"),
+    }
 
 
 def on_connect(client, userdata, flags, rc, properties=None):
@@ -24,17 +57,22 @@ def on_message(client, userdata, msg):
     manager, loop = userdata
     payload_str = msg.payload.decode()
 
-    # Parse topic: sinergi/iiot/{gateway_id}/{node_id}
+    # Parse topic: /iiot/{dev_eui}
     parts = msg.topic.split("/")
-    if len(parts) != 4:
+    if len(parts) != 3 or parts[1] != "iiot" or not parts[2]:
         print(f"[WARN] Unexpected topic format: {msg.topic}")
         return
 
-    _, _, gateway_id, node_id = parts
+    dev_eui = parts[2]
 
     try:
         data = json.loads(payload_str)
-        data_type = data.get("type", "environmental")
+        if data.get("dev_eui", dev_eui).lower() != dev_eui.lower():
+            print("[WARN] Topic DevEUI berbeda dengan payload DevEUI")
+            return
+        normalized_data = normalize_hardware_payload(data)
+        gateway_id = normalized_data["gateway_id"]
+        node_id = normalized_data["node_id"]
 
         # db = SessionLocal()
         # try:
@@ -51,7 +89,7 @@ def on_message(client, userdata, msg):
         # Broadcast update to WebSocket clients
         if manager and loop:
             asyncio.run_coroutine_threadsafe(
-                manager.broadcast_gateway_update(gateway_id), loop
+                manager.broadcast_gateway_update(gateway_id, node_id, normalized_data), loop
             )
 
     except Exception as e:

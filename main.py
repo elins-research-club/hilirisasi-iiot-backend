@@ -13,6 +13,7 @@ import asyncio
 import datetime
 from typing import Optional
 from sqlalchemy import text
+from thresholds import get_thresholds, sensor_status
 
 JWT_SECRET = "liquidglass_secret_token_2026"
 
@@ -76,8 +77,8 @@ def get_accessible_gateways(company_id: str, features: list):
         
         # Fallback to hardcoded just in case they haven't been provisioned yet
         COMPANY_GATEWAYS = {
-            "comp_ikea_id": ["GW-IKEA-JKT-01", "GW-IKEA-SBY-01"],
-            "comp_indogrosir": ["GW-INDO-BDG-01", "GW-INDO-MDN-01"],
+            "comp_ikea_id": ["IIOT-GATEWAY"],
+            "comp_indogrosir": ["IIOT-GATEWAY"],
         }
         legacy_gateways = COMPANY_GATEWAYS.get(company_id, [])
         
@@ -89,6 +90,7 @@ def get_accessible_gateways(company_id: str, features: list):
 
 def format_env_node(node, env_config, latest_data, hourly_data, online_override=None, last_update_override=None):
     """Format an environmental node with its sensor data."""
+    threshold_config = get_thresholds()
     hourly_trend = []
     sensors = []
     ispu_info = {"value": 0, "label": "Offline", "color": "#6b7280", "status": "baik"}
@@ -109,15 +111,31 @@ def format_env_node(node, env_config, latest_data, hourly_data, online_override=
         ispu_info["value"] = latest_data.ispu
 
         sensors = [
-            {"id": "temperature", "label": "Temperature", "value": latest_data.temperature, "unit": "°C", "threshold": env_config.temp_threshold if env_config else 35, "min": 15, "max": 45},
-            {"id": "humidity", "label": "Humidity", "value": latest_data.humidity, "unit": "%", "threshold": env_config.hum_threshold if env_config else 80, "min": 0, "max": 100},
-            {"id": "pm25", "label": "PM2.5", "value": latest_data.pm25, "unit": "μg/m³", "threshold": env_config.pm25_threshold if env_config else 55.4},
-            {"id": "pm10", "label": "PM10", "value": latest_data.pm10, "unit": "μg/m³", "threshold": env_config.pm10_threshold if env_config else 150},
-            {"id": "co", "label": "CO", "value": latest_data.co, "unit": "μg/m³", "threshold": env_config.co_threshold if env_config else 8000},
-            {"id": "no2", "label": "NO₂", "value": latest_data.no2, "unit": "μg/m³", "threshold": env_config.no2_threshold if env_config else 200},
-            {"id": "so2", "label": "SO₂", "value": latest_data.so2, "unit": "μg/m³", "threshold": env_config.so2_threshold if env_config else 180},
-            {"id": "o3", "label": "O₃", "value": latest_data.o3, "unit": "μg/m³", "threshold": env_config.o3_threshold if env_config else 235},
+            {"id": "temperature", "label": "Temperature", "value": latest_data.temperature, "unit": "°C", "threshold": threshold_config["temperature"]["threshold"]},
+            {"id": "humidity", "label": "Humidity", "value": latest_data.humidity, "unit": "%", "threshold": threshold_config["humidity"]["threshold"]},
+            {"id": "pressure", "label": "Pressure", "value": getattr(latest_data, "pressure", None), "unit": "hPa", "threshold": threshold_config["pressure"]["threshold"]},
+            {"id": "pm25", "label": "PM2.5", "value": latest_data.pm25, "unit": "μg/m³", "threshold": threshold_config["pm25"]["threshold"]},
+            {"id": "pm10", "label": "PM10", "value": latest_data.pm10, "unit": "μg/m³", "threshold": threshold_config["pm10"]["threshold"]},
+            {"id": "co", "label": "CO", "value": latest_data.co, "unit": "μg/m³", "threshold": threshold_config["co"]["threshold"]},
+            {"id": "no2", "label": "NO₂", "value": latest_data.no2, "unit": "μg/m³", "threshold": threshold_config["no2"]["threshold"]},
+            {"id": "so2", "label": "SO₂", "value": latest_data.so2, "unit": "μg/m³", "threshold": threshold_config["so2"]["threshold"]},
+            {"id": "o3", "label": "O₃", "value": latest_data.o3, "unit": "μg/m³", "threshold": threshold_config["o3"]["threshold"]},
+            {"id": "bme_gas", "label": "BME Gas", "value": getattr(latest_data, "bme_gas", None), "unit": "Ω", "threshold": 100000},
         ]
+        for sensor in sensors:
+            if sensor["id"] in threshold_config:
+                sensor["threshold"] = threshold_config[sensor["id"]]["threshold"]
+                sensor["unit"] = threshold_config[sensor["id"]]["unit"]
+            sensor["status"] = sensor_status(sensor["value"], sensor.get("threshold"), threshold_config.get(sensor["id"], {}).get("direction", "high"))
+        sensors.extend([
+            {"id": "co2", "label": "CO2", "value": getattr(latest_data, "co2", None), "unit": "ppm", "threshold": threshold_config["co2"]["threshold"]},
+            {"id": "pm1", "label": "PM1", "value": getattr(latest_data, "pm1", None), "unit": "ug/m3", "threshold": threshold_config["pm1"]["threshold"]},
+            {"id": "battery_voltage", "label": "Battery", "value": getattr(latest_data, "battery_voltage", None), "unit": "V", "threshold": threshold_config["battery_voltage"]["threshold"]},
+            {"id": "current_ma", "label": "Current", "value": getattr(latest_data, "current_ma", None), "unit": "mA", "threshold": 500},
+            {"id": "power_mw", "label": "Power", "value": getattr(latest_data, "power_mw", None), "unit": "mW", "threshold": 5000},
+        ])
+        for sensor in sensors[-5:]:
+            sensor["status"] = sensor_status(sensor["value"], sensor.get("threshold"), threshold_config.get(sensor["id"], {}).get("direction", "high"))
 
     if hourly_data:
         for h in hourly_data:
@@ -141,15 +159,19 @@ def format_env_node(node, env_config, latest_data, hourly_data, online_override=
         "ispu": ispu_info,
         "hourlyTrend": hourly_trend,
         "envConfig": {
-            "tempThreshold": env_config.temp_threshold if env_config else 35.0,
-            "humThreshold": env_config.hum_threshold if env_config else 80.0,
-            "pm25Threshold": env_config.pm25_threshold if env_config else 55.4,
-            "pm10Threshold": env_config.pm10_threshold if env_config else 150.0,
-            "coThreshold": env_config.co_threshold if env_config else 8000.0,
-            "no2Threshold": env_config.no2_threshold if env_config else 200.0,
-            "so2Threshold": env_config.so2_threshold if env_config else 180.0,
-            "o3Threshold": env_config.o3_threshold if env_config else 235.0,
-        } if env_config else None,
+            "tempThreshold": threshold_config["temperature"]["threshold"],
+            "humThreshold": threshold_config["humidity"]["threshold"],
+            "pm25Threshold": threshold_config["pm25"]["threshold"],
+            "pm10Threshold": threshold_config["pm10"]["threshold"],
+            "coThreshold": threshold_config["co"]["threshold"],
+            "no2Threshold": threshold_config["no2"]["threshold"],
+            "so2Threshold": threshold_config["so2"]["threshold"],
+            "o3Threshold": threshold_config["o3"]["threshold"],
+        },
+        "telemetry": {
+            "sequence": getattr(latest_data, "sequence", None) if latest_data else None,
+            "source": getattr(latest_data, "source", {}) if latest_data else {},
+        },
     }
 
 
@@ -235,7 +257,8 @@ def format_gateway_data_prometheus(db, gateway, prom_state, accessible_gateways=
         
         # Calculate dynamic online status (5 minutes = 300 seconds threshold)
         ts = node_prom_data.get('timestamp', 0)
-        is_online = (datetime.datetime.utcnow().timestamp() - ts) <= 300 if ts else False
+        import time
+        is_online = (time.time() - ts) <= 300 if ts else False
         last_update_str = datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc).isoformat() if ts else (node.last_update.isoformat() if node.last_update else "")
         
         if is_online:
@@ -252,12 +275,21 @@ def format_gateway_data_prometheus(db, gateway, prom_state, accessible_gateways=
                 def __init__(self, data):
                     self.temperature = data.get('temperature', 0)
                     self.humidity = data.get('humidity', 0)
+                    self.pressure = data.get('pressure')
+                    self.bme_gas = data.get('bme_gas')
                     self.pm25 = data.get('pm25', 0)
                     self.pm10 = data.get('pm10', 0)
                     self.co = data.get('co', 0)
                     self.no2 = data.get('no2', 0)
                     self.so2 = data.get('so2', 0)
                     self.o3 = data.get('o3', 0)
+                    self.co2 = data.get('co2')
+                    self.pm1 = data.get('pm1')
+                    self.battery_voltage = data.get('battery_voltage')
+                    self.current_ma = data.get('current_ma')
+                    self.power_mw = data.get('power_mw')
+                    self.sequence = data.get('sequence')
+                    self.source = data.get('source') or {}
                     self.ispu = data.get('ispu', 0)
             
             latest = MockLatestData(node_prom_data) if node_prom_data else None
@@ -273,10 +305,10 @@ def format_gateway_data_prometheus(db, gateway, prom_state, accessible_gateways=
                     self.person_count = int(data.get('person_count', 0))
                     self.density = data.get('density', 0)
                     # Simple logic to reconstruct density_level
-                    warn = config.density_warning if config else 0.1
-                    alert = config.density_alert if config else 0.2
+                    warn = config.density_warning if config else 0.05
+                    alert = config.density_alert if config else 0.1
                     if self.density >= alert:
-                        self.density_level = "alert"
+                        self.density_level = "danger"
                     elif self.density >= warn:
                         self.density_level = "warning"
                     else:
@@ -306,6 +338,22 @@ def format_gateway_data_prometheus(db, gateway, prom_state, accessible_gateways=
 class ConnectionManager:
     def __init__(self):
         self.active_connections: list[dict] = []
+        self.latest_realtime_state: dict[str, dict] = {}
+
+    @staticmethod
+    def _realtime_state(data: dict) -> dict:
+        state = {key: data[key] for key in (
+            "temperature", "humidity", "pressure", "bme_gas", "pm25", "pm10", "co", "no2", "so2", "o3",
+            "co2", "pm1", "battery_voltage", "current_ma", "power_mw",
+            "person_count", "density", "ispu", "sequence", "source"
+        ) if key in data}
+        timestamp = data.get("timestamp")
+        if timestamp:
+            try:
+                state["timestamp"] = datetime.datetime.fromisoformat(timestamp).timestamp()
+            except (TypeError, ValueError):
+                pass
+        return state
 
     async def connect(self, websocket: WebSocket, token: str):
         await websocket.accept()
@@ -333,6 +381,9 @@ class ConnectionManager:
                         authorized_node_ids.extend([n.id for n in nodes])
                 
                 prom_state = crud.get_prometheus_latest_state(authorized_node_ids)
+                for node_id, state in self.latest_realtime_state.items():
+                    if node_id in authorized_node_ids:
+                        prom_state.setdefault(node_id, {}).update(state)
                 
                 for gw in gateways:
                     formatted = format_gateway_data_prometheus(db, gw, prom_state, accessible_gateways)
@@ -378,7 +429,7 @@ class ConnectionManager:
     def disconnect(self, websocket: WebSocket):
         self.active_connections = [c for c in self.active_connections if c["ws"] != websocket]
 
-    async def broadcast_gateway_update(self, gateway_id: str):
+    async def broadcast_gateway_update(self, gateway_id: str, realtime_node_id: str | None = None, realtime_data: dict | None = None):
         """Broadcast updated gateway data to all authorized clients."""
         db = database.SessionLocal()
         try:
@@ -386,7 +437,17 @@ class ConnectionManager:
             if not gw:
                 return
 
-            formatted = format_gateway_data(db, gw)
+            nodes = crud.get_nodes_by_gateway(db, gateway_id)
+            node_ids = [n.id for n in nodes]
+            prom_state = crud.get_prometheus_latest_state(node_ids)
+
+            # Use the MQTT payload immediately for the changed node. Prometheus
+            # remains the source for history and the other nodes' latest state.
+            if realtime_node_id and realtime_data:
+                self.latest_realtime_state[realtime_node_id] = self._realtime_state(realtime_data)
+                prom_state.setdefault(realtime_node_id, {}).update(self.latest_realtime_state[realtime_node_id])
+
+            formatted = format_gateway_data_prometheus(db, gw, prom_state)
             if not formatted:
                 return
 
@@ -484,7 +545,7 @@ tags_metadata = [
 
 app = FastAPI(
     title="API Backend SINERGI Industrial IoT",
-    description="Layanan Backend Platform SINERGI Industrial IoT — terintegrasi dengan Prometheus Telemetry, MQTT EMQX, AI Vision Crowding Detection, dan Multi-tenant RBAC.",
+    description="Backend services untuk proyek Hilirisasi Riset Industrial IoT Departemen IKE UGM yang menangani integrasi MQTT EMQX dan Prometheus Telemetry.",
     version="1.0.0",
     openapi_tags=tags_metadata
 )
@@ -1043,6 +1104,11 @@ def simulator_ingest(gateway_id: str, node_id: str, payload: Dict[str, Any], bac
         return {"status": "success"}
     finally:
         db.close()
+
+@app.get("/api/v1/telemetry/thresholds", tags=["Telemetry & Monitoring"], summary="Ambil konfigurasi threshold terpusat")
+def get_telemetry_thresholds():
+    return get_thresholds()
+
 
 @app.get("/api/v1/telemetry/historical", tags=["Telemetry & Monitoring"], summary="Ambil data deret waktu telemetri historis dari Prometheus")
 def get_historical_telemetry_endpoint(node_ids: str = Query(...), metric: str = Query("temperature"), time_range: str = Query("24h")):
