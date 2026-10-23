@@ -18,7 +18,7 @@ DEVICE_NAME = os.getenv("DEVICE_NAME", "node-2")
 MQTT_BROKER = os.getenv("MQTT_BROKER", "127.0.0.1")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 MQTT_TOPIC = f"/iiot/{TARGET_DEV_EUI}"
-DEFAULT_INTERVAL = 10.0
+DEFAULT_INTERVAL = 1.0
 STATE_FILE = Path(os.getenv("SIMULATOR_STATE_FILE", "state.json"))
 
 
