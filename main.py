@@ -5,12 +5,14 @@ import database
 import models
 import crud
 from mqtt_client import start_mqtt_client
+import discord_notifier
 import hmac
 import hashlib
 import base64
 import json
 import asyncio
 import datetime
+import time
 from typing import Optional
 from sqlalchemy import text
 from thresholds import get_thresholds, sensor_status
@@ -95,16 +97,16 @@ def format_env_node(node, env_config, latest_data, hourly_data, online_override=
     sensors = []
     ispu_info = {"value": 0, "label": "Offline", "color": "#6b7280", "status": "baik"}
 
-    if latest_data:
+    if latest_data and (online_override is not False):
         # Calculate ISPU if not provided directly by Prometheus
         if not latest_data.ispu:
             latest_data.ispu = crud.calculate_ispu(
-                pm10=latest_data.pm10,
-                pm25=latest_data.pm25,
-                co=latest_data.co,
-                no2=latest_data.no2,
-                so2=latest_data.so2,
-                o3=latest_data.o3
+                pm10=latest_data.pm10 or 0,
+                pm25=latest_data.pm25 or 0,
+                co=latest_data.co or 0,
+                no2=latest_data.no2 or 0,
+                so2=latest_data.so2 or 0,
+                o3=latest_data.o3 or 0
             )
             
         ispu_info = crud.get_ispu_level(latest_data.ispu)
@@ -136,6 +138,25 @@ def format_env_node(node, env_config, latest_data, hourly_data, online_override=
         ])
         for sensor in sensors[-5:]:
             sensor["status"] = sensor_status(sensor["value"], sensor.get("threshold"), threshold_config.get(sensor["id"], {}).get("direction", "high"))
+    else:
+        ispu_info = {"value": 0, "label": "Offline", "color": "#6b7280", "status": "offline"}
+        sensors = [
+            {"id": "temperature", "label": "Temperature", "value": None, "unit": "°C", "threshold": threshold_config["temperature"]["threshold"], "status": "offline"},
+            {"id": "humidity", "label": "Humidity", "value": None, "unit": "%", "threshold": threshold_config["humidity"]["threshold"], "status": "offline"},
+            {"id": "pressure", "label": "Pressure", "value": None, "unit": "hPa", "threshold": threshold_config["pressure"]["threshold"], "status": "offline"},
+            {"id": "pm25", "label": "PM2.5", "value": None, "unit": "μg/m³", "threshold": threshold_config["pm25"]["threshold"], "status": "offline"},
+            {"id": "pm10", "label": "PM10", "value": None, "unit": "μg/m³", "threshold": threshold_config["pm10"]["threshold"], "status": "offline"},
+            {"id": "co", "label": "CO", "value": None, "unit": "μg/m³", "threshold": threshold_config["co"]["threshold"], "status": "offline"},
+            {"id": "no2", "label": "NO₂", "value": None, "unit": "μg/m³", "threshold": threshold_config["no2"]["threshold"], "status": "offline"},
+            {"id": "so2", "label": "SO₂", "value": None, "unit": "μg/m³", "threshold": threshold_config["so2"]["threshold"], "status": "offline"},
+            {"id": "o3", "label": "O₃", "value": None, "unit": "μg/m³", "threshold": threshold_config["o3"]["threshold"], "status": "offline"},
+            {"id": "bme_gas", "label": "BME Gas", "value": None, "unit": "Ω", "threshold": 100000, "status": "offline"},
+            {"id": "co2", "label": "CO2", "value": None, "unit": "ppm", "threshold": threshold_config["co2"]["threshold"], "status": "offline"},
+            {"id": "pm1", "label": "PM1", "value": None, "unit": "ug/m3", "threshold": threshold_config["pm1"]["threshold"], "status": "offline"},
+            {"id": "battery_voltage", "label": "Battery", "value": None, "unit": "V", "threshold": threshold_config["battery_voltage"]["threshold"], "status": "offline"},
+            {"id": "current_ma", "label": "Current", "value": None, "unit": "mA", "threshold": 500, "status": "offline"},
+            {"id": "power_mw", "label": "Power", "value": None, "unit": "mW", "threshold": 5000, "status": "offline"},
+        ]
 
     if hourly_data:
         for h in hourly_data:
@@ -255,10 +276,10 @@ def format_gateway_data_prometheus(db, gateway, prom_state, accessible_gateways=
     for node in nodes:
         node_prom_data = prom_state.get(node.id, {})
         
-        # Calculate dynamic online status (5 minutes = 300 seconds threshold)
+        # Calculate dynamic online status (60 seconds timeout for realtime hardware)
         ts = node_prom_data.get('timestamp', 0)
         import time
-        is_online = (time.time() - ts) <= 300 if ts else False
+        is_online = (time.time() - ts) <= 60 if ts else False
         last_update_str = datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc).isoformat() if ts else (node.last_update.isoformat() if node.last_update else "")
         
         if is_online:
@@ -273,16 +294,16 @@ def format_gateway_data_prometheus(db, gateway, prom_state, accessible_gateways=
             # Reconstruct latest_data object from Prometheus values
             class MockLatestData:
                 def __init__(self, data):
-                    self.temperature = data.get('temperature', 0)
-                    self.humidity = data.get('humidity', 0)
+                    self.temperature = data.get('temperature')
+                    self.humidity = data.get('humidity')
                     self.pressure = data.get('pressure')
                     self.bme_gas = data.get('bme_gas')
-                    self.pm25 = data.get('pm25', 0)
-                    self.pm10 = data.get('pm10', 0)
-                    self.co = data.get('co', 0)
-                    self.no2 = data.get('no2', 0)
-                    self.so2 = data.get('so2', 0)
-                    self.o3 = data.get('o3', 0)
+                    self.pm25 = data.get('pm25')
+                    self.pm10 = data.get('pm10')
+                    self.co = data.get('co')
+                    self.no2 = data.get('no2')
+                    self.so2 = data.get('so2')
+                    self.o3 = data.get('o3')
                     self.co2 = data.get('co2')
                     self.pm1 = data.get('pm1')
                     self.battery_voltage = data.get('battery_voltage')
@@ -290,9 +311,9 @@ def format_gateway_data_prometheus(db, gateway, prom_state, accessible_gateways=
                     self.power_mw = data.get('power_mw')
                     self.sequence = data.get('sequence')
                     self.source = data.get('source') or {}
-                    self.ispu = data.get('ispu', 0)
+                    self.ispu = data.get('ispu')
             
-            latest = MockLatestData(node_prom_data) if node_prom_data else None
+            latest = MockLatestData(node_prom_data) if (node_prom_data and is_online) else None
             
             formatted_nodes.append(format_env_node(node, env_config, latest, [], online_override=is_online, last_update_override=last_update_str))
             
@@ -318,7 +339,7 @@ def format_gateway_data_prometheus(db, gateway, prom_state, accessible_gateways=
                     ts_data = data.get('timestamp')
                     self.timestamp = datetime.datetime.fromtimestamp(ts_data, tz=datetime.timezone.utc) if ts_data else datetime.datetime.utcnow()
 
-            latest_snap = MockLatestSnapshot(node_prom_data) if node_prom_data else None
+            latest_snap = MockLatestSnapshot(node_prom_data) if (node_prom_data and is_online) else None
             formatted_nodes.append(format_vision_node(node, config, latest_snap, online_override=is_online, last_update_override=last_update_str))
 
     return {
@@ -339,6 +360,7 @@ class ConnectionManager:
     def __init__(self):
         self.active_connections: list[dict] = []
         self.latest_realtime_state: dict[str, dict] = {}
+        self.node_last_seen: dict[str, float] = {}
 
     @staticmethod
     def _realtime_state(data: dict) -> dict:
@@ -346,7 +368,7 @@ class ConnectionManager:
             "temperature", "humidity", "pressure", "bme_gas", "pm25", "pm10", "co", "no2", "so2", "o3",
             "co2", "pm1", "battery_voltage", "current_ma", "power_mw",
             "person_count", "density", "ispu", "sequence", "source"
-        ) if key in data}
+        ) if key in data and data[key] is not None}
         timestamp = data.get("timestamp")
         if timestamp:
             try:
@@ -381,9 +403,19 @@ class ConnectionManager:
                         authorized_node_ids.extend([n.id for n in nodes])
                 
                 prom_state = crud.get_prometheus_latest_state(authorized_node_ids)
-                for node_id, state in self.latest_realtime_state.items():
-                    if node_id in authorized_node_ids:
-                        prom_state.setdefault(node_id, {}).update(state)
+                now = time.time()
+                for node_id in authorized_node_ids:
+                    last_seen = self.node_last_seen.get(node_id, 0)
+                    if last_seen > 0 and (now - last_seen) <= 60:
+                        st = self.latest_realtime_state.get(node_id, {})
+                        prom_state.setdefault(node_id, {}).update(st)
+                    else:
+                        # Node is not active: clear stale realtime state
+                        self.latest_realtime_state.pop(node_id, None)
+                        if node_id in prom_state:
+                            prom_ts = prom_state[node_id].get("timestamp", 0)
+                            if (now - prom_ts) > 60:
+                                prom_state[node_id]["timestamp"] = 0
                 
                 for gw in gateways:
                     formatted = format_gateway_data_prometheus(db, gw, prom_state, accessible_gateways)
@@ -437,14 +469,38 @@ class ConnectionManager:
             if not gw:
                 return
 
+            # Auto-register node if it does not exist in database
+            if realtime_node_id:
+                existing_node = db.query(models.Node).filter(models.Node.id == realtime_node_id).first()
+                if not existing_node:
+                    new_node = models.Node(
+                        id=realtime_node_id,
+                        gateway_id=gateway_id,
+                        name=realtime_node_id,
+                        type="environmental",
+                        zone="Area Monitoring",
+                        online=True,
+                        last_update=datetime.datetime.utcnow()
+                    )
+                    db.add(new_node)
+                    try:
+                        db.commit()
+                    except Exception:
+                        db.rollback()
+
             nodes = crud.get_nodes_by_gateway(db, gateway_id)
             node_ids = [n.id for n in nodes]
             prom_state = crud.get_prometheus_latest_state(node_ids)
 
-            # Use the MQTT payload immediately for the changed node. Prometheus
-            # remains the source for history and the other nodes' latest state.
+            # Use the MQTT payload immediately for the changed node.
+            now = time.time()
             if realtime_node_id and realtime_data:
-                self.latest_realtime_state[realtime_node_id] = self._realtime_state(realtime_data)
+                self.node_last_seen[realtime_node_id] = now
+                st = self._realtime_state(realtime_data)
+                st["timestamp"] = now
+                if realtime_node_id not in self.latest_realtime_state:
+                    self.latest_realtime_state[realtime_node_id] = {}
+                self.latest_realtime_state[realtime_node_id].update(st)
                 prom_state.setdefault(realtime_node_id, {}).update(self.latest_realtime_state[realtime_node_id])
 
             formatted = format_gateway_data_prometheus(db, gw, prom_state)
@@ -558,6 +614,34 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+async def liveness_watchdog():
+    """Background task to detect node disconnection in real time and broadcast updates."""
+    while True:
+        try:
+            await asyncio.sleep(5)
+            now = time.time()
+            changed_gateways = set()
+            for node_id, last_seen in list(manager.node_last_seen.items()):
+                if last_seen > 0 and (now - last_seen) > 60:
+                    # Transition node to offline
+                    print(f"[WATCHDOG] Node {node_id} offline (>60s without MQTT message). Updating clients...")
+                    manager.node_last_seen[node_id] = 0
+                    manager.latest_realtime_state.pop(node_id, None)
+                    db = database.SessionLocal()
+                    try:
+                        n = db.query(models.Node).filter(models.Node.id == node_id).first()
+                        if n:
+                            changed_gateways.add(n.gateway_id)
+                    finally:
+                        db.close()
+            
+            for gw_id in changed_gateways:
+                await manager.broadcast_gateway_update(gw_id)
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            print(f"[WATCHDOG ERROR] {e}")
+
 # Start MQTT Client
 mqtt_client = None
 
@@ -565,6 +649,7 @@ mqtt_client = None
 async def startup_event():
     global mqtt_client
     mqtt_client = start_mqtt_client(manager)
+    asyncio.create_task(liveness_watchdog())
 
 
 # ── WebSocket Endpoint ───────────────────────────────────────────
@@ -1020,6 +1105,12 @@ def get_monitoring_state(token: str):
                     
         # Fetch the latest state of all these nodes from Prometheus
         prom_state = crud.get_prometheus_latest_state(authorized_node_ids)
+        now = time.time()
+        for node_id in authorized_node_ids:
+            last_seen = manager.node_last_seen.get(node_id, 0)
+            if last_seen > 0 and (now - last_seen) <= 120:
+                st = manager.latest_realtime_state.get(node_id, {})
+                prom_state.setdefault(node_id, {}).update(st)
         
         results = []
         db_gw_ids = set([gw.id for gw in gateways])
@@ -1337,11 +1428,13 @@ def clear_logs(token: str = Query(...)):
     finally:
         db.close()
 
+@app.post("/webhook/alert", tags=["Activity Logs & Alerts"], summary="Webhook Alertmanager dari Docker")
 @app.post("/api/v1/alerts/webhook", tags=["Activity Logs & Alerts"], summary="Webhook penerima notifikasi alarm dari Prometheus Alertmanager")
 async def alertmanager_webhook(request: Request):
     payload = await request.json()
     db = database.SessionLocal()
     try:
+        print(f"[ALERT WEBHOOK RECEIVED] Alerts count: {len(payload.get('alerts', []))}")
         for alert in payload.get('alerts', []):
             if alert.get('status') == 'firing':
                 alert_name = alert['labels'].get('alertname', 'Alert')
@@ -1350,14 +1443,17 @@ async def alertmanager_webhook(request: Request):
                 summary = alert['annotations'].get('summary', 'System Alert')
                 description = alert['annotations'].get('description', '')
                 
-                crud.create_activity_log(
-                    db=db,
-                    action="alert",
-                    detail=f"[{alert_name}] [{gateway_id}/{node_id}] {summary} - {description}",
-                    user_id="system",
-                    username="Prometheus Alertmanager",
-                    company_id="system"
-                )
+                try:
+                    crud.create_activity_log(
+                        db=db,
+                        action="alert",
+                        detail=f"[{alert_name}] [{gateway_id}/{node_id}] {summary} - {description}",
+                        user_id="system",
+                        username="Prometheus Alertmanager",
+                        company_id="system"
+                    )
+                except Exception as log_err:
+                    print(f"[WARN] Failed to write activity log: {log_err}")
                 
                 # Broadcast the alert to WebSocket clients
                 alert_payload = {
@@ -1369,9 +1465,54 @@ async def alertmanager_webhook(request: Request):
                 }
                 import asyncio
                 asyncio.create_task(manager.broadcast_system_alert(alert_payload))
+
+                # Dispatch notification to Discord (mock lokal atau live webhook)
+                asyncio.create_task(discord_notifier.notify_from_alertmanager(alert))
         return {"status": "success"}
     except Exception as e:
         print(f"Webhook error: {e}")
         return {"status": "error", "detail": str(e)}
     finally:
         db.close()
+
+
+class TestDiscordAlertRequest(BaseModel):
+    title: Optional[str] = "High Temperature Alert (Simulation)"
+    description: Optional[str] = "Node e02d6ee6c5f39cfd reported temperature 49.2 °C (threshold > 40.0 °C)."
+    severity: Optional[str] = "critical"
+    gateway_id: Optional[str] = "IIOT-GATEWAY"
+    node_id: Optional[str] = "e02d6ee6c5f39cfd"
+    status: Optional[str] = "firing"
+
+
+@app.post("/api/v1/alerts/test-discord", tags=["Activity Logs & Alerts"], summary="Uji coba notifikasi Discord (Mode Lokal Mock / Live)")
+async def test_discord_alert(req: TestDiscordAlertRequest):
+    fields = [
+        {"name": "Gateway", "value": f"`{req.gateway_id}`", "inline": True},
+        {"name": "Node ID", "value": f"`{req.node_id}`", "inline": True},
+        {"name": "Severity", "value": req.severity.upper(), "inline": True},
+        {"name": "Detail", "value": req.description, "inline": False},
+    ]
+    result = await discord_notifier.send_discord_notification(
+        title=req.title,
+        description=req.description,
+        severity=req.severity,
+        status=req.status,
+        fields=fields
+    )
+    return {
+        "message": "Uji coba notifikasi Discord berhasil diproses",
+        "mode": "mock" if discord_notifier.is_mock_mode() else "production",
+        "result": result
+    }
+
+
+@app.get("/api/v1/alerts/mock-history", tags=["Activity Logs & Alerts"], summary="Lihat riwayat notifikasi Discord mode lokal (mock)")
+def get_mock_discord_history():
+    history = discord_notifier.get_mock_history()
+    return {
+        "mode": "mock" if discord_notifier.is_mock_mode() else "production",
+        "total": len(history),
+        "alerts": history
+    }
+

@@ -1,0 +1,94 @@
+[
+  {
+    "id": "mock-1792547768021",
+    "created_at": "2026-10-21T08:56:08.021391",
+    "mode": "mock",
+    "title": "Peringatan Kepadatan Kerumunan (Crowd Density)",
+    "severity": "warning",
+    "status": "firing",
+    "payload": {
+      "username": "SINERGI IIOT Bot",
+      "avatar_url": "https://img.icons8.com/fluency/96/sensor.png",
+      "embeds": [
+        {
+          "title": "🟡 WARNING • Peringatan Kepadatan Kerumunan (Crowd Density)",
+          "description": "Kamera mendeteksi kepadatan 0.18 orang/m² (mendekati threshold alert 0.20).",
+          "color": 16705372,
+          "timestamp": "2026-10-21T01:56:08.021321+00:00",
+          "footer": {
+            "text": "SINERGI IIOT Alert System",
+            "icon_url": "https://img.icons8.com/fluency/48/industrial.png"
+          },
+          "fields": [
+            {
+              "name": "Gateway",
+              "value": "`IIOT-GATEWAY-01`",
+              "inline": true
+            },
+            {
+              "name": "Node ID",
+              "value": "`CAM-IKEA-JKT-001`",
+              "inline": true
+            },
+            {
+              "name": "Severity",
+              "value": "WARNING",
+              "inline": true
+            },
+            {
+              "name": "Detail",
+              "value": "Kamera mendeteksi kepadatan 0.18 orang/m² (mendekati threshold alert 0.20).",
+              "inline": false
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "mock-1792547768020",
+    "created_at": "2026-10-21T08:56:08.021129",
+    "mode": "mock",
+    "title": "Gas BME Resistance Terlalu Rendah (Bahaya Gas Terdeteksi)",
+    "severity": "critical",
+    "status": "firing",
+    "payload": {
+      "username": "SINERGI IIOT Bot",
+      "avatar_url": "https://img.icons8.com/fluency/96/sensor.png",
+      "embeds": [
+        {
+          "title": "🔴 CRITICAL • Gas BME Resistance Terlalu Rendah (Bahaya Gas Terdeteksi)",
+          "description": "Sensor BME680 membaca resistansi 12.4 kOhm (di bawah batas aman 20 kOhm) selama lebih dari 30 detik.",
+          "color": 15548997,
+          "timestamp": "2026-10-21T01:56:08.020606+00:00",
+          "footer": {
+            "text": "SINERGI IIOT Alert System",
+            "icon_url": "https://img.icons8.com/fluency/48/industrial.png"
+          },
+          "fields": [
+            {
+              "name": "Gateway",
+              "value": "`IIOT-GATEWAY-01`",
+              "inline": true
+            },
+            {
+              "name": "Node ID",
+              "value": "`e02d6ee6c5f39cfd`",
+              "inline": true
+            },
+            {
+              "name": "Severity",
+              "value": "CRITICAL",
+              "inline": true
+            },
+            {
+              "name": "Detail",
+              "value": "Sensor BME680 membaca resistansi 12.4 kOhm (di bawah batas aman 20 kOhm) selama lebih dari 30 detik.",
+              "inline": false
+            }
+          ]
+        }
+      ]
+    }
+  }
+]
