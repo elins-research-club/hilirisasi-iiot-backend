@@ -97,66 +97,65 @@ def format_env_node(node, env_config, latest_data, hourly_data, online_override=
     sensors = []
     ispu_info = {"value": 0, "label": "Offline", "color": "#6b7280", "status": "baik"}
 
+    sensor_definitions = [
+        ("temperature", "Suhu", "BME688"),
+        ("humidity", "Kelembapan", "BME688"),
+        ("pressure", "Tekanan Udara", "BME688"),
+        ("co2", "CO2", "CO2"),
+        ("co", "CO", "CO"),
+        ("pm25", "PM 2.5", "PMS7003T"),
+        ("pm10", "PM 10", "PMS7003T"),
+        ("h2s", "H2S", "H2S"),
+        ("ch4", "Gas Metana", "Metana"),
+        ("lpg", "Gas LPG", "LPG"),
+        ("current_ma", "Arus", "INA226"),
+    ]
+
     if latest_data and (online_override is not False):
         # Calculate ISPU if not provided directly by Prometheus
         if not latest_data.ispu:
             latest_data.ispu = crud.calculate_ispu(
-                pm10=latest_data.pm10 or 0,
-                pm25=latest_data.pm25 or 0,
-                co=latest_data.co or 0,
-                no2=latest_data.no2 or 0,
-                so2=latest_data.so2 or 0,
-                o3=latest_data.o3 or 0
+                pm10=getattr(latest_data, "pm10", 0) or 0,
+                pm25=getattr(latest_data, "pm25", 0) or 0,
+                co=getattr(latest_data, "co", 0) or 0,
             )
             
         ispu_info = crud.get_ispu_level(latest_data.ispu)
         ispu_info["value"] = latest_data.ispu
 
-        sensors = [
-            {"id": "temperature", "label": "Temperature", "value": latest_data.temperature, "unit": "°C", "threshold": threshold_config["temperature"]["threshold"]},
-            {"id": "humidity", "label": "Humidity", "value": latest_data.humidity, "unit": "%", "threshold": threshold_config["humidity"]["threshold"]},
-            {"id": "pressure", "label": "Pressure", "value": getattr(latest_data, "pressure", None), "unit": "hPa", "threshold": threshold_config["pressure"]["threshold"]},
-            {"id": "pm25", "label": "PM2.5", "value": latest_data.pm25, "unit": "μg/m³", "threshold": threshold_config["pm25"]["threshold"]},
-            {"id": "pm10", "label": "PM10", "value": latest_data.pm10, "unit": "μg/m³", "threshold": threshold_config["pm10"]["threshold"]},
-            {"id": "co", "label": "CO", "value": latest_data.co, "unit": "μg/m³", "threshold": threshold_config["co"]["threshold"]},
-            {"id": "no2", "label": "NO₂", "value": latest_data.no2, "unit": "μg/m³", "threshold": threshold_config["no2"]["threshold"]},
-            {"id": "so2", "label": "SO₂", "value": latest_data.so2, "unit": "μg/m³", "threshold": threshold_config["so2"]["threshold"]},
-            {"id": "o3", "label": "O₃", "value": latest_data.o3, "unit": "μg/m³", "threshold": threshold_config["o3"]["threshold"]},
-            {"id": "bme_gas", "label": "BME Gas", "value": getattr(latest_data, "bme_gas", None), "unit": "Ω", "threshold": 100000},
-        ]
-        for sensor in sensors:
-            if sensor["id"] in threshold_config:
-                sensor["threshold"] = threshold_config[sensor["id"]]["threshold"]
-                sensor["unit"] = threshold_config[sensor["id"]]["unit"]
-            sensor["status"] = sensor_status(sensor["value"], sensor.get("threshold"), threshold_config.get(sensor["id"], {}).get("direction", "high"))
-        sensors.extend([
-            {"id": "co2", "label": "CO2", "value": getattr(latest_data, "co2", None), "unit": "ppm", "threshold": threshold_config["co2"]["threshold"]},
-            {"id": "pm1", "label": "PM1", "value": getattr(latest_data, "pm1", None), "unit": "ug/m3", "threshold": threshold_config["pm1"]["threshold"]},
-            {"id": "battery_voltage", "label": "Battery", "value": getattr(latest_data, "battery_voltage", None), "unit": "V", "threshold": threshold_config["battery_voltage"]["threshold"]},
-            {"id": "current_ma", "label": "Current", "value": getattr(latest_data, "current_ma", None), "unit": "mA", "threshold": 500},
-            {"id": "power_mw", "label": "Power", "value": getattr(latest_data, "power_mw", None), "unit": "mW", "threshold": 5000},
-        ])
-        for sensor in sensors[-5:]:
-            sensor["status"] = sensor_status(sensor["value"], sensor.get("threshold"), threshold_config.get(sensor["id"], {}).get("direction", "high"))
+        for sid, label, hw_sensor in sensor_definitions:
+            cfg = threshold_config.get(sid, {})
+            val = getattr(latest_data, sid, None)
+            thresh = cfg.get("threshold", 100)
+            unit = cfg.get("unit", "")
+            direction = cfg.get("direction", "high")
+            sensors.append({
+                "id": sid,
+                "label": label,
+                "sensor": hw_sensor,
+                "value": val,
+                "unit": unit,
+                "threshold": thresh,
+                "min": cfg.get("min", 0),
+                "max": cfg.get("max", thresh * 1.5 if thresh else 100),
+                "status": sensor_status(val, thresh, direction),
+            })
     else:
         ispu_info = {"value": 0, "label": "Offline", "color": "#6b7280", "status": "offline"}
-        sensors = [
-            {"id": "temperature", "label": "Temperature", "value": None, "unit": "°C", "threshold": threshold_config["temperature"]["threshold"], "status": "offline"},
-            {"id": "humidity", "label": "Humidity", "value": None, "unit": "%", "threshold": threshold_config["humidity"]["threshold"], "status": "offline"},
-            {"id": "pressure", "label": "Pressure", "value": None, "unit": "hPa", "threshold": threshold_config["pressure"]["threshold"], "status": "offline"},
-            {"id": "pm25", "label": "PM2.5", "value": None, "unit": "μg/m³", "threshold": threshold_config["pm25"]["threshold"], "status": "offline"},
-            {"id": "pm10", "label": "PM10", "value": None, "unit": "μg/m³", "threshold": threshold_config["pm10"]["threshold"], "status": "offline"},
-            {"id": "co", "label": "CO", "value": None, "unit": "μg/m³", "threshold": threshold_config["co"]["threshold"], "status": "offline"},
-            {"id": "no2", "label": "NO₂", "value": None, "unit": "μg/m³", "threshold": threshold_config["no2"]["threshold"], "status": "offline"},
-            {"id": "so2", "label": "SO₂", "value": None, "unit": "μg/m³", "threshold": threshold_config["so2"]["threshold"], "status": "offline"},
-            {"id": "o3", "label": "O₃", "value": None, "unit": "μg/m³", "threshold": threshold_config["o3"]["threshold"], "status": "offline"},
-            {"id": "bme_gas", "label": "BME Gas", "value": None, "unit": "Ω", "threshold": 100000, "status": "offline"},
-            {"id": "co2", "label": "CO2", "value": None, "unit": "ppm", "threshold": threshold_config["co2"]["threshold"], "status": "offline"},
-            {"id": "pm1", "label": "PM1", "value": None, "unit": "ug/m3", "threshold": threshold_config["pm1"]["threshold"], "status": "offline"},
-            {"id": "battery_voltage", "label": "Battery", "value": None, "unit": "V", "threshold": threshold_config["battery_voltage"]["threshold"], "status": "offline"},
-            {"id": "current_ma", "label": "Current", "value": None, "unit": "mA", "threshold": 500, "status": "offline"},
-            {"id": "power_mw", "label": "Power", "value": None, "unit": "mW", "threshold": 5000, "status": "offline"},
-        ]
+        for sid, label, hw_sensor in sensor_definitions:
+            cfg = threshold_config.get(sid, {})
+            thresh = cfg.get("threshold", 100)
+            sensors.append({
+                "id": sid,
+                "label": label,
+                "sensor": hw_sensor,
+                "value": None,
+                "unit": cfg.get("unit", ""),
+                "threshold": thresh,
+                "min": cfg.get("min", 0),
+                "max": cfg.get("max", thresh * 1.5 if thresh else 100),
+                "status": "offline",
+            })
 
     if hourly_data:
         for h in hourly_data:
@@ -164,7 +163,15 @@ def format_env_node(node, env_config, latest_data, hourly_data, online_override=
                 "time": h.timestamp.isoformat(),
                 "temperature": h.temperature,
                 "humidity": h.humidity,
+                "pressure": getattr(h, "pressure", None),
+                "co2": getattr(h, "co2", None),
+                "co": getattr(h, "co", None),
                 "pm25": h.pm25,
+                "pm10": getattr(h, "pm10", None),
+                "h2s": getattr(h, "h2s", None),
+                "ch4": getattr(h, "ch4", None),
+                "lpg": getattr(h, "lpg", None),
+                "current_ma": getattr(h, "current_ma", None),
                 "ispu": h.ispu,
             })
         hourly_trend.reverse()
@@ -182,12 +189,15 @@ def format_env_node(node, env_config, latest_data, hourly_data, online_override=
         "envConfig": {
             "tempThreshold": threshold_config["temperature"]["threshold"],
             "humThreshold": threshold_config["humidity"]["threshold"],
+            "pressureThreshold": threshold_config["pressure"]["threshold"],
+            "co2Threshold": threshold_config["co2"]["threshold"],
+            "coThreshold": threshold_config["co"]["threshold"],
             "pm25Threshold": threshold_config["pm25"]["threshold"],
             "pm10Threshold": threshold_config["pm10"]["threshold"],
-            "coThreshold": threshold_config["co"]["threshold"],
-            "no2Threshold": threshold_config["no2"]["threshold"],
-            "so2Threshold": threshold_config["so2"]["threshold"],
-            "o3Threshold": threshold_config["o3"]["threshold"],
+            "h2sThreshold": threshold_config["h2s"]["threshold"],
+            "ch4Threshold": threshold_config["ch4"]["threshold"],
+            "lpgThreshold": threshold_config["lpg"]["threshold"],
+            "currentThreshold": threshold_config["current_ma"]["threshold"],
         },
         "telemetry": {
             "sequence": getattr(latest_data, "sequence", None) if latest_data else None,
@@ -297,18 +307,14 @@ def format_gateway_data_prometheus(db, gateway, prom_state, accessible_gateways=
                     self.temperature = data.get('temperature')
                     self.humidity = data.get('humidity')
                     self.pressure = data.get('pressure')
-                    self.bme_gas = data.get('bme_gas')
+                    self.co2 = data.get('co2')
+                    self.co = data.get('co')
                     self.pm25 = data.get('pm25')
                     self.pm10 = data.get('pm10')
-                    self.co = data.get('co')
-                    self.no2 = data.get('no2')
-                    self.so2 = data.get('so2')
-                    self.o3 = data.get('o3')
-                    self.co2 = data.get('co2')
-                    self.pm1 = data.get('pm1')
-                    self.battery_voltage = data.get('battery_voltage')
+                    self.h2s = data.get('h2s')
+                    self.ch4 = data.get('ch4') if data.get('ch4') is not None else data.get('metana')
+                    self.lpg = data.get('lpg')
                     self.current_ma = data.get('current_ma')
-                    self.power_mw = data.get('power_mw')
                     self.sequence = data.get('sequence')
                     self.source = data.get('source') or {}
                     self.ispu = data.get('ispu')
@@ -365,8 +371,7 @@ class ConnectionManager:
     @staticmethod
     def _realtime_state(data: dict) -> dict:
         state = {key: data[key] for key in (
-            "temperature", "humidity", "pressure", "bme_gas", "pm25", "pm10", "co", "no2", "so2", "o3",
-            "co2", "pm1", "battery_voltage", "current_ma", "power_mw",
+            "temperature", "humidity", "pressure", "co2", "co", "pm25", "pm10", "h2s", "ch4", "lpg", "current_ma",
             "person_count", "density", "ispu", "sequence", "source"
         ) if key in data and data[key] is not None}
         timestamp = data.get("timestamp")
@@ -549,13 +554,31 @@ try:
 except Exception as e:
     print(f"Warning: Failed to run migrate_auth: {e}")
 
-# Ensure badge_color column exists (PostgreSQL specific)
+# Ensure badge_color and new sensor columns exist
 try:
     with database.engine.connect() as conn:
-        conn.execute(text("ALTER TABLE roles ADD COLUMN IF NOT EXISTS badge_color VARCHAR DEFAULT '#6b7280'"))
-        conn.commit()
+        for stmt in (
+            "ALTER TABLE roles ADD COLUMN IF NOT EXISTS badge_color VARCHAR DEFAULT '#6b7280'",
+            "ALTER TABLE sensor_data ADD COLUMN IF NOT EXISTS pressure FLOAT DEFAULT 0",
+            "ALTER TABLE sensor_data ADD COLUMN IF NOT EXISTS co2 FLOAT DEFAULT 0",
+            "ALTER TABLE sensor_data ADD COLUMN IF NOT EXISTS h2s FLOAT DEFAULT 0",
+            "ALTER TABLE sensor_data ADD COLUMN IF NOT EXISTS ch4 FLOAT DEFAULT 0",
+            "ALTER TABLE sensor_data ADD COLUMN IF NOT EXISTS lpg FLOAT DEFAULT 0",
+            "ALTER TABLE sensor_data ADD COLUMN IF NOT EXISTS current_ma FLOAT DEFAULT 0",
+            "ALTER TABLE env_node_config ADD COLUMN IF NOT EXISTS pressure_threshold FLOAT DEFAULT 1013.0",
+            "ALTER TABLE env_node_config ADD COLUMN IF NOT EXISTS co2_threshold FLOAT DEFAULT 1000.0",
+            "ALTER TABLE env_node_config ADD COLUMN IF NOT EXISTS h2s_threshold FLOAT DEFAULT 10.0",
+            "ALTER TABLE env_node_config ADD COLUMN IF NOT EXISTS ch4_threshold FLOAT DEFAULT 1000.0",
+            "ALTER TABLE env_node_config ADD COLUMN IF NOT EXISTS lpg_threshold FLOAT DEFAULT 1000.0",
+            "ALTER TABLE env_node_config ADD COLUMN IF NOT EXISTS current_threshold FLOAT DEFAULT 500.0",
+        ):
+            try:
+                conn.execute(text(stmt))
+                conn.commit()
+            except Exception:
+                conn.rollback()
 except Exception as e:
-    print(f"Warning: Failed to ensure badge_color column: {e}")
+    print(f"Warning: Failed to ensure schema columns: {e}")
 
 # Seed warehouse data
 db = database.SessionLocal()
@@ -1035,12 +1058,15 @@ def delete_role(role_id: str, token: str = Query(...)):
 class EnvConfigUpdate(BaseModel):
     temp_threshold: Optional[float] = None
     hum_threshold: Optional[float] = None
+    pressure_threshold: Optional[float] = None
+    co2_threshold: Optional[float] = None
+    co_threshold: Optional[float] = None
     pm25_threshold: Optional[float] = None
     pm10_threshold: Optional[float] = None
-    co_threshold: Optional[float] = None
-    no2_threshold: Optional[float] = None
-    so2_threshold: Optional[float] = None
-    o3_threshold: Optional[float] = None
+    h2s_threshold: Optional[float] = None
+    ch4_threshold: Optional[float] = None
+    lpg_threshold: Optional[float] = None
+    current_threshold: Optional[float] = None
 
 class VisionConfigUpdate(BaseModel):
     stream_url: Optional[str] = None

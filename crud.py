@@ -73,18 +73,15 @@ def _calc_sub_index(concentration: float, breakpoints: list) -> int:
     return 500
 
 
-def calculate_ispu(pm25=0, pm10=0, co=0, no2=0, so2=0, o3=0) -> int:
-    """Calculate ISPU Indonesia (max of all sub-indices)."""
+def calculate_ispu(pm25=0, pm10=0, co=0, **_kwargs) -> int:
+    """Calculate ISPU Indonesia (max of sub-indices from active pollutants: PM2.5, PM10, CO)."""
     # Hardware payloads may legitimately omit a sensor during warm-up or when
     # that sensor is not installed; treat missing values as unavailable/zero.
-    values = [0 if value is None else value for value in (pm25, pm10, co, no2, so2, o3)]
+    values = [0 if value is None else value for value in (pm25, pm10, co)]
     sub_indices = [
         _calc_sub_index(values[0], ISPU_BREAKPOINTS_PM25),
         _calc_sub_index(values[1], ISPU_BREAKPOINTS_PM10),
         _calc_sub_index(values[2], ISPU_BREAKPOINTS_CO),
-        _calc_sub_index(values[3], ISPU_BREAKPOINTS_NO2),
-        _calc_sub_index(values[4], ISPU_BREAKPOINTS_SO2),
-        _calc_sub_index(values[5], ISPU_BREAKPOINTS_O3),
     ]
     return max(sub_indices) if sub_indices else 0
 
@@ -177,22 +174,22 @@ def save_env_sensor_data(db: Session, gateway_id: str, node_id: str, payload: di
     pm25 = payload.get("pm25", 0)
     pm10 = payload.get("pm10", 0)
     co = payload.get("co", 0)
-    no2 = payload.get("no2", 0)
-    so2 = payload.get("so2", 0)
-    o3 = payload.get("o3", 0)
-    ispu = calculate_ispu(pm25, pm10, co, no2, so2, o3)
+    ispu = calculate_ispu(pm25=pm25, pm10=pm10, co=co)
 
     sensor_data = models.SensorData(
         node_id=node_id,
         gateway_id=gateway_id,
         temperature=payload.get("temperature", 0),
         humidity=payload.get("humidity", 0),
+        pressure=payload.get("pressure", 0),
+        co2=payload.get("co2", 0),
+        co=co,
         pm25=pm25,
         pm10=pm10,
-        co=co,
-        no2=no2,
-        so2=so2,
-        o3=o3,
+        h2s=payload.get("h2s", 0),
+        ch4=payload.get("ch4", payload.get("metana", 0)),
+        lpg=payload.get("lpg", 0),
+        current_ma=payload.get("current_ma", 0),
         ispu=ispu,
         timestamp=current_time,
     )
@@ -312,22 +309,21 @@ def upsert_env_config(db: Session, node_id: str, config_data: dict):
         config = models.EnvNodeConfig(node_id=node_id)
         db.add(config)
 
-    if "temp_threshold" in config_data:
-        config.temp_threshold = config_data["temp_threshold"]
-    if "hum_threshold" in config_data:
-        config.hum_threshold = config_data["hum_threshold"]
-    if "pm25_threshold" in config_data:
-        config.pm25_threshold = config_data["pm25_threshold"]
-    if "pm10_threshold" in config_data:
-        config.pm10_threshold = config_data["pm10_threshold"]
-    if "co_threshold" in config_data:
-        config.co_threshold = config_data["co_threshold"]
-    if "no2_threshold" in config_data:
-        config.no2_threshold = config_data["no2_threshold"]
-    if "so2_threshold" in config_data:
-        config.so2_threshold = config_data["so2_threshold"]
-    if "o3_threshold" in config_data:
-        config.o3_threshold = config_data["o3_threshold"]
+    for field in (
+        "temp_threshold",
+        "hum_threshold",
+        "pressure_threshold",
+        "co2_threshold",
+        "co_threshold",
+        "pm25_threshold",
+        "pm10_threshold",
+        "h2s_threshold",
+        "ch4_threshold",
+        "lpg_threshold",
+        "current_threshold",
+    ):
+        if field in config_data and hasattr(config, field):
+            setattr(config, field, config_data[field])
 
     db.commit()
     db.refresh(config)
@@ -601,6 +597,19 @@ def get_prometheus_latest_state(node_ids: list[str]):
                     
                 # hapus prefix 'iiot_'
                 key = metric_name.replace('iiot_', '')
+                alias_map = {
+                    'metana': 'ch4',
+                    'gas_metana': 'ch4',
+                    'methane': 'ch4',
+                    'gas_lpg': 'lpg',
+                    'arus': 'current_ma',
+                    'current': 'current_ma',
+                    'suhu': 'temperature',
+                    'kelembapan': 'humidity',
+                    'tekanan_udara': 'pressure',
+                    'tekanan': 'pressure',
+                }
+                key = alias_map.get(key, key)
                 value = float(res['value'][1])
                 timestamp = float(res['value'][0])
                 

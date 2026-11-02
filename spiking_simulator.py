@@ -44,11 +44,15 @@ def get_spiked_metrics(cycle: int) -> dict:
     return {
         "temperature": temp_spike,
         "humidity": hum_spike,
+        "pressure": 1013.25,
+        "co2": round(random.uniform(1100, 1600), 0),
         "co": co_spike,
         "pm25": pm25_spike,
         "pm10": round(pm25_spike * 1.6, 1),
+        "h2s": round(random.uniform(8.0, 14.0), 1),
+        "ch4": round(random.uniform(900, 1300), 0),
+        "lpg": round(random.uniform(850, 1250), 0),
         "current_ma": current_ma,
-        "pressure": 1013.25,
         "timestamp": dt.datetime.now(dt.timezone.utc).isoformat()
     }
 
@@ -83,9 +87,15 @@ def main():
             telegraf_payload = {
                 "temperature": metrics["temperature"],
                 "humidity": metrics["humidity"],
+                "pressure": metrics["pressure"],
+                "co2": metrics["co2"],
                 "co": metrics["co"],
                 "pm25": metrics["pm25"],
                 "pm10": metrics["pm10"],
+                "h2s": metrics["h2s"],
+                "ch4": metrics["ch4"],
+                "lpg": metrics["lpg"],
+                "current_ma": metrics["current_ma"],
                 "timestamp": metrics["timestamp"]
             }
 
@@ -100,10 +110,15 @@ def main():
                 "data": {
                     "temperature": metrics["temperature"],
                     "humidity": metrics["humidity"],
-                    "current_ma": metrics["current_ma"],
+                    "pressure": metrics["pressure"],
+                    "co2": metrics["co2"],
                     "co": metrics["co"],
                     "pm25": metrics["pm25"],
-                    "pressure": metrics["pressure"]
+                    "pm10": metrics["pm10"],
+                    "h2s": metrics["h2s"],
+                    "ch4": metrics["ch4"],
+                    "lpg": metrics["lpg"],
+                    "current_ma": metrics["current_ma"],
                 }
             }
 

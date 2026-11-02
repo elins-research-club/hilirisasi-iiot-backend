@@ -35,16 +35,22 @@ HARDWARE_NODE_ID=e02d6ee6c5f39cfd
 
 Jangan commit file `.env`, token, password broker, atau secret JWT.
 
-## Menjalankan service Docker
+## Menjalankan seluruh stack di Docker (One-Click Local Testing)
 
-Dari folder root project:
+Dari folder root project (`/Users/juanpaulus/hilirisasiiiot`):
 
-```powershell
-docker compose up -d db emqx telegraf prometheus alertmanager
+```bash
+docker compose up -d --build
 docker compose ps
 ```
 
-Pastikan container berikut aktif:
+Atau jika hanya ingin menjalankan infrastruktur observability saja:
+
+```bash
+docker compose up -d db emqx telegraf prometheus alertmanager
+```
+
+Pastikan container berikut aktif di Docker Desktop:
 
 ```text
 iiot_db
@@ -52,7 +58,17 @@ iiot_emqx
 iiot_telegraf
 iiot_prometheus
 iiot_alertmanager
+iiot_backend
+iiot_simulator
+iiot_frontend
 ```
+
+Setelah container aktif, langsung buka:
+- **Frontend Dashboard**: `http://localhost:3000` (Akun default: `admin` / `admin123`)
+- **Backend Swagger Docs**: `http://localhost:8000/docs`
+- **EMQX Dashboard**: `http://localhost:18083`
+- **Prometheus UI**: `http://localhost:9090`
+- **Alertmanager UI**: `http://localhost:9093`
 
 ## Menjalankan backend lokal
 

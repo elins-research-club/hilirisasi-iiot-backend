@@ -37,6 +37,7 @@ def save_sequence(sequence: int) -> None:
 
 def make_payload(sequence: int) -> dict:
     """Return the exact JSON envelope produced by chirpstack_to_emqx.py."""
+    pm25 = round(random.uniform(15.0, 45.0), 1)
     return {
         "source": "chirpstack",
         "dev_eui": TARGET_DEV_EUI,
@@ -47,7 +48,15 @@ def make_payload(sequence: int) -> dict:
             "packet_id": sequence % 256,
             "temperature": round(random.uniform(22.0, 38.0), 1),
             "humidity": round(random.uniform(40.0, 85.0), 1),
-            "current_ma": round(random.uniform(65.0, 95.0), 2),
+            "pressure": round(random.uniform(1004.0, 1014.0), 1),
+            "co2": round(random.uniform(450.0, 950.0), 0),
+            "co": round(random.uniform(800.0, 2400.0), 0),
+            "pm25": pm25,
+            "pm10": round(pm25 * 1.6 + random.uniform(2.0, 8.0), 1),
+            "h2s": round(random.uniform(0.5, 4.5), 1),
+            "ch4": round(random.uniform(120.0, 450.0), 0),
+            "lpg": round(random.uniform(100.0, 400.0), 0),
+            "current_ma": round(random.uniform(65.0, 165.0), 2),
         },
     }
 

@@ -24,41 +24,37 @@ INTERVAL = 3.0
 
 def generate_metrics(cycle: int) -> dict:
     phase = cycle * 0.25
+    # BME688: Suhu, Kelembapan, Tekanan udara
     temperature = round(30.4 + math.sin(phase) * 2.2 + random.uniform(-0.3, 0.3), 1)
     humidity = round(64.0 + math.cos(phase * 0.8) * 6.5 + random.uniform(-0.8, 0.8), 1)
     pressure = round(1008.6 + math.sin(phase * 0.3) * 1.4 + random.uniform(-0.2, 0.2), 1)
-    bme_gas = round(142000 + math.cos(phase * 0.5) * 18000 + random.uniform(-2500, 2500), 0)
 
-    pm1 = round(14.0 + abs(math.sin(phase * 0.6)) * 8.0 + random.uniform(-0.8, 0.8), 1)
+    # PMS7003T: PM 2.5, PM 10
     pm25 = round(23.5 + abs(math.sin(phase * 0.6)) * 18.0 + random.uniform(-1.2, 1.2), 1)
     pm10 = round(pm25 * 1.65 + random.uniform(2.0, 6.0), 1)
 
+    # Gas sensors: CO2, CO, H2S, Gas Metana (CH4), Gas LPG
     co2 = round(612 + math.sin(phase * 0.7) * 95 + random.uniform(-12, 12), 0)
     co = round(1180 + abs(math.sin(phase * 0.4)) * 640 + random.uniform(-40, 40), 0)
-    no2 = round(28.0 + abs(math.cos(phase * 0.5)) * 19.0 + random.uniform(-1.5, 1.5), 1)
-    so2 = round(16.0 + abs(math.sin(phase * 0.35)) * 14.0 + random.uniform(-1.0, 1.0), 1)
-    o3 = round(44.0 + abs(math.cos(phase * 0.45)) * 26.0 + random.uniform(-2.0, 2.0), 1)
+    h2s = round(1.8 + abs(math.sin(phase * 0.5)) * 2.4 + random.uniform(-0.2, 0.2), 1)
+    ch4 = round(240 + abs(math.cos(phase * 0.45)) * 180 + random.uniform(-15, 15), 0)
+    lpg = round(210 + abs(math.sin(phase * 0.35)) * 160 + random.uniform(-12, 12), 0)
 
-    battery_voltage = round(3.92 + math.sin(phase * 0.1) * 0.08 + random.uniform(-0.01, 0.01), 2)
+    # INA226: Arus
     current_ma = round(142.0 + math.sin(phase * 0.9) * 24.0 + random.uniform(-3.0, 3.0), 1)
-    power_mw = round(battery_voltage * current_ma, 0)
 
     return {
         "temperature": temperature,
         "humidity": humidity,
         "pressure": pressure,
-        "bme_gas": bme_gas,
-        "pm1": pm1,
-        "pm25": pm25,
-        "pm10": pm10,
         "co2": co2,
         "co": co,
-        "no2": no2,
-        "so2": so2,
-        "o3": o3,
-        "battery_voltage": battery_voltage,
+        "pm25": pm25,
+        "pm10": pm10,
+        "h2s": h2s,
+        "ch4": ch4,
+        "lpg": lpg,
         "current_ma": current_ma,
-        "power_mw": power_mw,
         "timestamp": dt.datetime.now(dt.timezone.utc).isoformat(),
     }
 
@@ -106,8 +102,8 @@ def main():
             client.publish(BACKEND_TOPIC, json.dumps(backend_payload), qos=1)
 
             print(
-                f"[SIM #{cycle:04d}] T={m['temperature']}C H={m['humidity']}% "
-                f"PM2.5={m['pm25']} CO2={m['co2']}ppm V={m['battery_voltage']}V I={m['current_ma']}mA",
+                f"[SIM #{cycle:04d}] T={m['temperature']}C H={m['humidity']}% P={m['pressure']}hPa "
+                f"PM2.5={m['pm25']} PM10={m['pm10']} CO2={m['co2']}ppm CO={m['co']} H2S={m['h2s']} CH4={m['ch4']} LPG={m['lpg']} I={m['current_ma']}mA",
                 flush=True,
             )
             time.sleep(INTERVAL)

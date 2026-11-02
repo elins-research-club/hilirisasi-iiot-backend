@@ -36,17 +36,22 @@ class SensorData(Base):
     gateway_id = Column(String, index=True)
     timestamp = Column(DateTime, default=datetime.datetime.utcnow, index=True)
 
-    # Environmental sensors
+    # Environmental sensors (BME688)
     temperature = Column(Float, default=0)
     humidity = Column(Float, default=0)
+    pressure = Column(Float, default=0)
 
-    # Air Quality
+    # Air Quality & Gas (CO2, CO, PMS7003T, H2S, Metana, LPG)
+    co2 = Column(Float, default=0)
+    co = Column(Float, default=0)
     pm25 = Column(Float, default=0)
     pm10 = Column(Float, default=0)
-    co = Column(Float, default=0)
-    no2 = Column(Float, default=0)
-    so2 = Column(Float, default=0)
-    o3 = Column(Float, default=0)
+    h2s = Column(Float, default=0)
+    ch4 = Column(Float, default=0)
+    lpg = Column(Float, default=0)
+
+    # Electrical (INA226)
+    current_ma = Column(Float, default=0)
 
     # ISPU value calculated
     ispu = Column(Integer, default=0)
@@ -79,12 +84,15 @@ class EnvNodeConfig(Base):
     node_id = Column(String, primary_key=True, index=True)
     temp_threshold = Column(Float, default=35.0)
     hum_threshold = Column(Float, default=80.0)
+    pressure_threshold = Column(Float, default=1013.0)
+    co2_threshold = Column(Float, default=1000.0)
+    co_threshold = Column(Float, default=8000.0)
     pm25_threshold = Column(Float, default=55.4)
     pm10_threshold = Column(Float, default=150.0)
-    co_threshold = Column(Float, default=8000.0)
-    no2_threshold = Column(Float, default=200.0)
-    so2_threshold = Column(Float, default=180.0)
-    o3_threshold = Column(Float, default=235.0)
+    h2s_threshold = Column(Float, default=10.0)
+    ch4_threshold = Column(Float, default=1000.0)
+    lpg_threshold = Column(Float, default=1000.0)
+    current_threshold = Column(Float, default=500.0)
 
 class Role(Base):
     __tablename__ = "roles"

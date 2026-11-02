@@ -45,25 +45,17 @@ def normalize_hardware_payload(data: dict, topic_dev_eui: str = "") -> dict:
                     continue
         return None
 
-    temp = get_num("temperature", "temp", "suhu")
-    hum = get_num("humidity", "hum", "kelembapan")
-    current = get_num("current_ma", "current", "arus", "current_mA")
-    press = get_num("pressure", "press", "tekanan", "barometer")
-    bme_gas = get_num("bme_gas", "gas_resistance", "gas", "gas_bme")
-    pm25 = get_num("pm25", "pm2_5", "pm2.5")
-    pm10 = get_num("pm10", "pm_10")
-    pm1 = get_num("pm1", "pm1_0", "pm1.0")
-    co = get_num("co", "co_ppm", "carbon_monoxide")
-    no2 = get_num("no2", "no2_ppm")
-    so2 = get_num("so2", "so2_ppm")
-    o3 = get_num("o3", "o3_ppm", "ozone")
+    temp = get_num("temperature", "temp", "suhu", "bme688_temp")
+    hum = get_num("humidity", "hum", "kelembapan", "bme688_hum")
+    press = get_num("pressure", "press", "tekanan", "tekanan_udara", "barometer", "bme688_press")
     co2 = get_num("co2", "co2_ppm")
-    batt = get_num("battery_voltage", "voltage", "battery", "batt", "tegangan")
-    power = get_num("power_mw", "power", "daya", "power_mW")
-
-    # If power is not supplied but voltage (V) and current (mA) are present: P = V * I (mW)
-    if power is None and batt is not None and current is not None:
-        power = round(batt * current, 2)
+    co = get_num("co", "co_ppm", "carbon_monoxide")
+    pm25 = get_num("pm25", "pm2_5", "pm2.5", "pms7003t_pm25")
+    pm10 = get_num("pm10", "pm_10", "pms7003t_pm10")
+    h2s = get_num("h2s", "h2s_ppm", "hydrogen_sulfide")
+    ch4 = get_num("ch4", "metana", "gas_metana", "methane", "ch4_ppm", "methane_ppm")
+    lpg = get_num("lpg", "gas_lpg", "lpg_ppm")
+    current = get_num("current_ma", "current", "arus", "current_mA", "ina226_current")
 
     return {
         "type": "environmental",
@@ -75,19 +67,15 @@ def normalize_hardware_payload(data: dict, topic_dev_eui: str = "") -> dict:
         "timestamp": data.get("received_at") or data.get("timestamp") or dt.datetime.now(dt.timezone.utc).isoformat(),
         "temperature": temp,
         "humidity": hum,
-        "current_ma": current,
         "pressure": press,
-        "bme_gas": bme_gas,
+        "co2": co2,
+        "co": co,
         "pm25": pm25,
         "pm10": pm10,
-        "co": co,
-        "no2": no2,
-        "so2": so2,
-        "o3": o3,
-        "co2": co2,
-        "pm1": pm1,
-        "battery_voltage": batt,
-        "power_mw": power,
+        "h2s": h2s,
+        "ch4": ch4,
+        "lpg": lpg,
+        "current_ma": current,
         "source": data.get("source"),
     }
 

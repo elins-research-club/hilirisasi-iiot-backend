@@ -1,0 +1,191 @@
+groups:
+- name: iiotsystem
+  rules:
+  - alert: TemperatureWarning
+    expr: iiot_temperature > 28
+    for: 30s
+    labels:
+      severity: warning
+    annotations:
+      summary: "High temperature on {{ $labels.gateway_id }}"
+      description: "Node {{ $labels.node_id }} reported temperature {{ $value }} for more than 30 seconds."
+
+  - alert: TemperatureCritical
+    expr: iiot_temperature > 35
+    for: 30s
+    labels:
+      severity: critical
+    annotations:
+      summary: "High temperature on {{ $labels.gateway_id }}"
+      description: "Node {{ $labels.node_id }} reported temperature {{ $value }} for more than 30 seconds."
+
+  - alert: HumidityWarning
+    expr: iiot_humidity > 64
+    for: 30s
+    labels:
+      severity: warning
+    annotations:
+      summary: "High humidity on {{ $labels.gateway_id }}"
+      description: "Node {{ $labels.node_id }} reported humidity {{ $value }} for more than 30 seconds."
+
+  - alert: HumidityCritical
+    expr: iiot_humidity > 80
+    for: 30s
+    labels:
+      severity: critical
+    annotations:
+      summary: "High humidity on {{ $labels.gateway_id }}"
+      description: "Node {{ $labels.node_id }} reported humidity {{ $value }} for more than 30 seconds."
+
+  - alert: Co2Warning
+    expr: iiot_co2 > 800
+    for: 30s
+    labels:
+      severity: warning
+    annotations:
+      summary: "High co2 on {{ $labels.gateway_id }}"
+      description: "Node {{ $labels.node_id }} reported co2 {{ $value }} for more than 30 seconds."
+
+  - alert: Co2Critical
+    expr: iiot_co2 > 1000
+    for: 30s
+    labels:
+      severity: critical
+    annotations:
+      summary: "High co2 on {{ $labels.gateway_id }}"
+      description: "Node {{ $labels.node_id }} reported co2 {{ $value }} for more than 30 seconds."
+
+  - alert: CoWarning
+    expr: iiot_co > 6400
+    for: 30s
+    labels:
+      severity: warning
+    annotations:
+      summary: "High co on {{ $labels.gateway_id }}"
+      description: "Node {{ $labels.node_id }} reported co {{ $value }} for more than 30 seconds."
+
+  - alert: CoCritical
+    expr: iiot_co > 8000
+    for: 30s
+    labels:
+      severity: critical
+    annotations:
+      summary: "High co on {{ $labels.gateway_id }}"
+      description: "Node {{ $labels.node_id }} reported co {{ $value }} for more than 30 seconds."
+
+  - alert: Pm25Warning
+    expr: iiot_pm25 > 44.32
+    for: 30s
+    labels:
+      severity: warning
+    annotations:
+      summary: "High pm25 on {{ $labels.gateway_id }}"
+      description: "Node {{ $labels.node_id }} reported pm25 {{ $value }} for more than 30 seconds."
+
+  - alert: Pm25Critical
+    expr: iiot_pm25 > 55.4
+    for: 30s
+    labels:
+      severity: critical
+    annotations:
+      summary: "High pm25 on {{ $labels.gateway_id }}"
+      description: "Node {{ $labels.node_id }} reported pm25 {{ $value }} for more than 30 seconds."
+
+  - alert: Pm10Warning
+    expr: iiot_pm10 > 120
+    for: 30s
+    labels:
+      severity: warning
+    annotations:
+      summary: "High pm10 on {{ $labels.gateway_id }}"
+      description: "Node {{ $labels.node_id }} reported pm10 {{ $value }} for more than 30 seconds."
+
+  - alert: Pm10Critical
+    expr: iiot_pm10 > 150
+    for: 30s
+    labels:
+      severity: critical
+    annotations:
+      summary: "High pm10 on {{ $labels.gateway_id }}"
+      description: "Node {{ $labels.node_id }} reported pm10 {{ $value }} for more than 30 seconds."
+
+  - alert: H2sWarning
+    expr: iiot_h2s > 8
+    for: 30s
+    labels:
+      severity: warning
+    annotations:
+      summary: "High h2s on {{ $labels.gateway_id }}"
+      description: "Node {{ $labels.node_id }} reported h2s {{ $value }} for more than 30 seconds."
+
+  - alert: H2sCritical
+    expr: iiot_h2s > 10
+    for: 30s
+    labels:
+      severity: critical
+    annotations:
+      summary: "High h2s on {{ $labels.gateway_id }}"
+      description: "Node {{ $labels.node_id }} reported h2s {{ $value }} for more than 30 seconds."
+
+  - alert: Ch4Warning
+    expr: iiot_ch4 > 800
+    for: 30s
+    labels:
+      severity: warning
+    annotations:
+      summary: "High ch4 on {{ $labels.gateway_id }}"
+      description: "Node {{ $labels.node_id }} reported ch4 {{ $value }} for more than 30 seconds."
+
+  - alert: Ch4Critical
+    expr: iiot_ch4 > 1000
+    for: 30s
+    labels:
+      severity: critical
+    annotations:
+      summary: "High ch4 on {{ $labels.gateway_id }}"
+      description: "Node {{ $labels.node_id }} reported ch4 {{ $value }} for more than 30 seconds."
+
+  - alert: LpgWarning
+    expr: iiot_lpg > 800
+    for: 30s
+    labels:
+      severity: warning
+    annotations:
+      summary: "High lpg on {{ $labels.gateway_id }}"
+      description: "Node {{ $labels.node_id }} reported lpg {{ $value }} for more than 30 seconds."
+
+  - alert: LpgCritical
+    expr: iiot_lpg > 1000
+    for: 30s
+    labels:
+      severity: critical
+    annotations:
+      summary: "High lpg on {{ $labels.gateway_id }}"
+      description: "Node {{ $labels.node_id }} reported lpg {{ $value }} for more than 30 seconds."
+
+  - alert: CurrentMaWarning
+    expr: iiot_current_ma > 400
+    for: 30s
+    labels:
+      severity: warning
+    annotations:
+      summary: "High current_ma on {{ $labels.gateway_id }}"
+      description: "Node {{ $labels.node_id }} reported current_ma {{ $value }} for more than 30 seconds."
+
+  - alert: CurrentMaCritical
+    expr: iiot_current_ma > 500
+    for: 30s
+    labels:
+      severity: critical
+    annotations:
+      summary: "High current_ma on {{ $labels.gateway_id }}"
+      description: "Node {{ $labels.node_id }} reported current_ma {{ $value }} for more than 30 seconds."
+
+  - alert: HighCrowdWarning
+    expr: iiot_person_count > 30
+    for: 30s
+    labels:
+      severity: critical
+    annotations:
+      summary: "High Crowd Density on {{ $labels.gateway_id }}"
+      description: "Camera {{ $labels.node_id }} detected {{ $value }} people for more than 30 seconds."

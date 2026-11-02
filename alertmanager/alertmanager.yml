@@ -1,0 +1,16 @@
+global:
+  resolve_timeout: 1m
+
+route:
+  group_by: ["alertname", "gateway_id", "node_id"]
+  group_wait: 5s
+  group_interval: 15s
+  repeat_interval: 1h
+  receiver: "fastapi-webhook"
+
+receivers:
+  - name: "fastapi-webhook"
+    webhook_configs:
+      - url: "http://backend:8000/webhook/alert"
+        send_resolved: true
+
