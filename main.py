@@ -608,10 +608,10 @@ tags_metadata = [
         "name": "Node Configuration",
         "description": "Pengaturan batas ambang batas (threshold) sensor lingkungan serta parameter kamera deteksi AI Vision.",
     },
-    {
-        "name": "Device Provisioning",
-        "description": "Manajemen siklus hidup hardware: pembuatan massal Serial Number & PIN serta klaim perangkat oleh perusahaan.",
-    },
+    # {
+    # "name": "Device Provisioning",
+    # "description": "Manajemen siklus hidup hardware: pembuatan massal Serial Number & PIN serta klaim perangkat oleh perusahaan.",
+    # },
     {
         "name": "Activity Logs & Alerts",
         "description": "Pencatatan riwayat audit keamanan sistem, log aktivitas pengguna, dan integrasi webhook Prometheus Alertmanager.",
@@ -1285,98 +1285,99 @@ def update_vision_config(node_id: str, body: VisionConfigUpdate, background_task
     finally:
         db.close()
 
-# ── Provisioning & Device Registry ───────────────────────────────
-
-class DeviceGenerateRequest(BaseModel):
-    count: int = 1
-
-class DeviceClaimRequest(BaseModel):
-    sn: str
-    pin: str
-
-@app.get("/api/v1/provisioning/devices", tags=["Device Provisioning"], summary="Daftar semua perangkat gateway yang terdaftar di sistem")
-def get_all_devices():
-    db = database.SessionLocal()
-    try:
-        devices = db.query(models.DeviceRegistry).all()
-        return {
-            "success": True,
-            "devices": [
-                {
-                    "sn": d.sn,
-                    "pin": d.pin,
-                    "status": d.status,
-                    "company_id": d.company_id,
-                    "created_at": d.created_at.isoformat() if d.created_at else None
-                } for d in devices
-            ]
-        }
-    finally:
-        db.close()
-
-@app.post("/api/v1/provisioning/devices/generate", tags=["Device Provisioning"], summary="Pembuatan massal Serial Number dan PIN perangkat baru")
-def generate_devices(req: DeviceGenerateRequest):
-    import random
-    
-    if req.count < 1 or req.count > 100:
-        raise HTTPException(status_code=400, detail="Count must be between 1 and 100")
-        
-    db = database.SessionLocal()
-    try:
-        new_devices = []
-        for _ in range(req.count):
-            random_suffix = ''.join(random.choices("0123456789ABCDEF", k=4))
-            sn = f"SN-GW-2026-{random_suffix}"
-            pin = str(random.randint(10000000, 99999999))
-            
-            device = models.DeviceRegistry(
-                sn=sn,
-                pin=pin,
-                status="unclaimed",
-                company_id=None
-            )
-            db.add(device)
-            new_devices.append({
-                "sn": sn,
-                "pin": pin,
-                "status": "unclaimed",
-                "company_id": None,
-                "created_at": datetime.datetime.utcnow().isoformat()
-            })
-            
-        db.commit()
-        return {"success": True, "generated": new_devices}
-    finally:
-        db.close()
-
-@app.post("/api/v1/provisioning/devices/claim", tags=["Device Provisioning"], summary="Klaim perangkat gateway oleh perusahaan pengguna")
-def claim_device(req: DeviceClaimRequest, token: str = Query(...)):
-    payload = verify_jwt(token)
-    if not payload:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
-        
-    db = database.SessionLocal()
-    try:
-        device = db.query(models.DeviceRegistry).filter(models.DeviceRegistry.sn == req.sn).first()
-        if not device:
-            raise HTTPException(status_code=404, detail="Serial Number tidak ditemukan dalam sistem.")
-            
-        if device.pin != req.pin:
-            raise HTTPException(status_code=401, detail="PIN Keamanan salah.")
-            
-        if device.status != "unclaimed":
-            raise HTTPException(status_code=400, detail="Perangkat ini sudah diklaim oleh perusahaan lain.")
-            
-        device.status = "active"
-        device.company_id = payload.get("company_id")
-        db.commit()
-        
-        return {
-            "success": True,
-            "message": "Perangkat berhasil diklaim dan dihubungkan ke dashboard Anda."
-        }
-    finally:
-        db.close()
+# ── Provisioning & Device Registry (DINONAKTIFKAN) ─────────────────
+# Fitur provisioning sementara dimatikan. Hapus tanda '# ' di bawah untuk mengaktifkan lagi.
+#
+# class DeviceGenerateRequest(BaseModel):
+#     count: int = 1
+#
+# class DeviceClaimRequest(BaseModel):
+#     sn: str
+#     pin: str
+#
+# @app.get("/api/v1/provisioning/devices", tags=["Device Provisioning"], summary="Daftar semua perangkat gateway yang terdaftar di sistem")
+# def get_all_devices():
+#     db = database.SessionLocal()
+#     try:
+#         devices = db.query(models.DeviceRegistry).all()
+#         return {
+#             "success": True,
+#             "devices": [
+#                 {
+#                     "sn": d.sn,
+#                     "pin": d.pin,
+#                     "status": d.status,
+#                     "company_id": d.company_id,
+#                     "created_at": d.created_at.isoformat() if d.created_at else None
+#                 } for d in devices
+#             ]
+#         }
+#     finally:
+#         db.close()
+#
+# @app.post("/api/v1/provisioning/devices/generate", tags=["Device Provisioning"], summary="Pembuatan massal Serial Number dan PIN perangkat baru")
+# def generate_devices(req: DeviceGenerateRequest):
+#     import random
+#
+#     if req.count < 1 or req.count > 100:
+#         raise HTTPException(status_code=400, detail="Count must be between 1 and 100")
+#
+#     db = database.SessionLocal()
+#     try:
+#         new_devices = []
+#         for _ in range(req.count):
+#             random_suffix = ''.join(random.choices("0123456789ABCDEF", k=4))
+#             sn = f"SN-GW-2026-{random_suffix}"
+#             pin = str(random.randint(10000000, 99999999))
+#
+#             device = models.DeviceRegistry(
+#                 sn=sn,
+#                 pin=pin,
+#                 status="unclaimed",
+#                 company_id=None
+#             )
+#             db.add(device)
+#             new_devices.append({
+#                 "sn": sn,
+#                 "pin": pin,
+#                 "status": "unclaimed",
+#                 "company_id": None,
+#                 "created_at": datetime.datetime.utcnow().isoformat()
+#             })
+#
+#         db.commit()
+#         return {"success": True, "generated": new_devices}
+#     finally:
+#         db.close()
+#
+# @app.post("/api/v1/provisioning/devices/claim", tags=["Device Provisioning"], summary="Klaim perangkat gateway oleh perusahaan pengguna")
+# def claim_device(req: DeviceClaimRequest, token: str = Query(...)):
+#     payload = verify_jwt(token)
+#     if not payload:
+#         raise HTTPException(status_code=401, detail="Invalid or expired token")
+#
+#     db = database.SessionLocal()
+#     try:
+#         device = db.query(models.DeviceRegistry).filter(models.DeviceRegistry.sn == req.sn).first()
+#         if not device:
+#             raise HTTPException(status_code=404, detail="Serial Number tidak ditemukan dalam sistem.")
+#
+#         if device.pin != req.pin:
+#             raise HTTPException(status_code=401, detail="PIN Keamanan salah.")
+#
+#         if device.status != "unclaimed":
+#             raise HTTPException(status_code=400, detail="Perangkat ini sudah diklaim oleh perusahaan lain.")
+#
+#         device.status = "active"
+#         device.company_id = payload.get("company_id")
+#         db.commit()
+#
+#         return {
+#             "success": True,
+#             "message": "Perangkat berhasil diklaim dan dihubungkan ke dashboard Anda."
+#         }
+#     finally:
+#         db.close()
 
 
 class LogCreate(BaseModel):
